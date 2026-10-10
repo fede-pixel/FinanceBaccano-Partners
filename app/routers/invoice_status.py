@@ -7,7 +7,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.models import PlannedItem, Transaction
+from app.models import Invoice, PlannedItem, Transaction
 from app.services import invoice_match, reconcile
 from app.services.util import get_setting, parse_date, set_setting
 from app.web import redirect, render
@@ -242,6 +242,29 @@ def dispute(item_ids: str = Form(...), action: str = Form("contenzioso"), note: 
                                                                   "forecast e capacità di investimento")
     session.commit()
     return redirect(back if back.startswith("/") else "/fatture/situazione", msg=msg if n else "Nessuna modifica")
+
+
+TREATMENTS = {
+    "": "Fattura rimessa tra i costi dell'anno",
+    "cespite": "Bene da ammortizzare: esce dai costi dell'EBITDA e resta tra gli investimenti",
+    "escluso": "Acconto già compreso nella fattura di saldo: non è più contato due volte nei costi",
+    "verificato": "Acconto verificato: resta tra i costi e non viene più segnalato",
+}
+
+
+@router.post("/fatture/trattamento-costo")
+def cost_treatment(invoice_id: int = Form(...), value: str = Form(""), back: str = Form("/verifica"),
+                   session: Session = Depends(get_session)):
+    """Come conta una fattura ricevuta nei costi dell'anno (KPI, EBITDA, provvisorio)."""
+    back = back if back.startswith("/") else "/verifica"
+    inv = session.get(Invoice, invoice_id)
+    if inv is None or value not in TREATMENTS:
+        return redirect(back, err="Fattura o scelta non valida")
+    if inv.direction != "passiva":
+        return redirect(back, err="Vale solo per le fatture ricevute")
+    inv.cost_treatment = value
+    session.commit()
+    return redirect(back, msg=f"{TREATMENTS[value]} (n. {inv.number}, {inv.counterparty})")
 
 
 @router.get("/fatture/situazione.xlsx")

@@ -30,7 +30,12 @@
   <div class="doc-row" style="grid-template-columns: auto 1fr auto">
     <span class="badge {{ {'ok': 'good', 'warn': 'warn', 'err': 'crit', 'info': 'info'}[c.status] }}">{{ {'ok': 'OK', 'warn': 'Da controllare', 'err': 'Da sistemare', 'info': 'Info'}[c.status] }}</span>
     <div><strong>{{ c.title }}</strong><div class="small">{{ c.detail }}</div>
-      {% if c.items %}<ul class="note-list small muted">{% for i in c.items %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}</div>
+      {% if c.items %}<ul class="note-list small muted">{% for i in c.items %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      {% for a in c.actions %}<div class="small" style="margin-top:6px">{{ a.text }}
+        <div class="toolbar" style="margin-top:4px">{% for value, label in a.buttons %}
+          <form method="post" action="/fatture/trattamento-costo"><input type="hidden" name="invoice_id" value="{{ a.invoice_id }}">
+            <input type="hidden" name="value" value="{{ value }}"><input type="hidden" name="back" value="/verifica">
+            <button class="small {{ 'ghost' if not loop.first }}">{{ label }}</button></form>{% endfor %}</div></div>{% endfor %}</div>
     {% if c.link and c.status != 'ok' %}<a class="small" href="{{ c.link }}">Vai →</a>{% else %}<span></span>{% endif %}
   </div>
   {% endfor %}

@@ -48,7 +48,7 @@
   <div class="card">
     <h2>Fatture</h2>
     <div class="table-wrap"><table>
-      <thead><tr><th>Data</th><th>Numero</th><th>Tipo</th><th>Stato</th><th>Movimenti</th><th class="num">Totale</th><th class="num">Aperto</th></tr></thead>
+      <thead><tr><th>Data</th><th>Numero</th><th>Tipo</th><th>Stato</th><th>Movimenti</th><th class="num">Totale</th><th class="num">Aperto</th><th>Nei costi</th></tr></thead>
       <tbody>{% for s in led.invoices %}{% set inv = s.invoice %}
         <tr><td>{{ inv.date|d }}</td><td>{{ inv.number }}<div class="small muted">{{ inv.counterparty }}</div></td>
           <td class="small">{{ inv.doc_type }} · {{ 'emessa' if inv.direction == 'attiva' else 'ricevuta' }}</td>
@@ -57,7 +57,13 @@
             {% elif s.state == 'pagata' %}<span class="badge good">saldata</span>{% elif s.state == 'compensata' %}<span class="badge">compensata</span>
             {% else %}<span class="badge warn">saldata senza movimento</span>{% endif %}</td>
           <td class="small">{% for t in s.transactions %}<div>{{ t.date|d }} · {{ t.amount_cents|eur_sign }}</div>{% else %}—{% endfor %}</td>
-          <td class="num">{{ inv.total_cents|eur }}</td><td class="num">{{ s.open_cents|eur if s.state == 'aperta' else '' }}</td></tr>
+          <td class="num">{{ inv.total_cents|eur }}</td><td class="num">{{ s.open_cents|eur if s.state == 'aperta' else '' }}</td>
+          <td>{% if inv.direction == 'passiva' %}<form method="post" action="/fatture/trattamento-costo" style="display:flex;gap:4px">
+            <input type="hidden" name="invoice_id" value="{{ inv.id }}"><input type="hidden" name="back" value="/controparte?q={{ q|urlencode }}">
+            <select name="value" class="small" onchange="this.form.submit()" title="Come conta nei costi dell'anno (EBITDA)">
+              {% for v, l in [('', 'Costo dell\'anno'), ('cespite', 'Bene da ammortizzare'), ('escluso', 'Acconto compreso nel saldo'), ('verificato', 'Acconto verificato')] %}
+              {% if v != 'verificato' or inv.cost_treatment == 'verificato' %}<option value="{{ v }}" {{ 'selected' if inv.cost_treatment == v }}>{{ l }}</option>{% endif %}{% endfor %}
+            </select></form>{% endif %}</td></tr>
       {% endfor %}</tbody>
     </table></div>
   </div>

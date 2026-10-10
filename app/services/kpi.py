@@ -36,6 +36,8 @@ class Month:
     external_costs: int = 0
     personnel: int = 0
     self_invoice_costs: int = 0  # di cui autofatture per servizi esteri (escluse dal "fatturato passivo" di Aruba)
+    capex: int = 0  # fatture di beni da ammortizzare: investimenti, fuori dai costi dell'EBITDA
+    excluded_costs: int = 0  # acconti già compresi nella fattura di saldo (altrimenti contati due volte)
     cash_in: int = 0
     cash_out: int = 0
     cash_in_invoices: int = 0  # entrate collegate a fatture emesse (incassi)
@@ -97,6 +99,9 @@ def _signed_taxable(inv: Invoice) -> tuple[int, bool]:
     return (-base if inv.doc_type in CREDIT_NOTE_TYPES else base), missing
 
 
+COST_EXCLUDED = ("cespite", "escluso")
+
+
 def _paid_days(statuses, direction: str, since: date) -> float | None:
     """Giorni medi (ponderati per importo) tra data fattura e pagamento verificato da movimento."""
     num = den = 0
@@ -144,6 +149,10 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
                 ytd_rev_novat += amount
                 ytd_rev_novat_n += 1
             clients[inv.counterparty] += amount
+        elif inv.cost_treatment == "cespite":
+            r.capex += amount
+        elif inv.cost_treatment == "escluso":
+            r.excluded_costs += amount
         else:  # fatture ricevute e autofatture (anche se caricate tra le emesse): costi
             r.external_costs += amount
             if inv.doc_type in SELF_INVOICE_TYPES:
@@ -182,7 +191,10 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
     year_rows = [r for r in rows if r.start.year == today.year]
     recon = {
         "revenue": sum(r.revenue for r in year_rows),
-        "costs": sum(r.external_costs for r in year_rows),
+        # come Aruba: tutte le fatture ricevute; cespiti e acconti esclusi si tolgono dopo, verso l'EBITDA
+        "costs": sum(r.external_costs + r.capex + r.excluded_costs for r in year_rows),
+        "capex": sum(r.capex for r in year_rows),
+        "excluded_costs": sum(r.excluded_costs for r in year_rows),
         "self_costs": sum(r.self_invoice_costs for r in year_rows),
         "personnel": sum(r.personnel for r in year_rows),
     }
@@ -375,6 +387,8 @@ def provisional_view(session: Session, cutoff: date) -> Provisional:
         amount, _ = _signed_taxable(inv)
         if inv.direction == "attiva" and inv.doc_type not in SELF_INVOICE_TYPES:
             revenue += amount
+            continue
+        if inv.cost_treatment in COST_EXCLUDED:
             continue
         costs_all += amount
         if inv.received_date is None or inv.received_date <= cutoff:

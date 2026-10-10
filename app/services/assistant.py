@@ -395,6 +395,8 @@ def tool_kpi(session: Session, mesi: int) -> dict:
                           "flusso_di_cassa": _eur(rep.ytd_cash),
                           "crediti_in_contenzioso_o_stralciati_imponibile": _eur(rep.recon.get("disputed_taxable", 0)),
                           "ebitda_prudente": _eur(rep.recon.get("ebitda_prudent", rep.ytd_ebitda)),
+                          "beni_da_ammortizzare_esclusi_dai_costi": _eur(rep.recon.get("capex", 0)),
+                          "acconti_compresi_nel_saldo_esclusi_dai_costi": _eur(rep.recon.get("excluded_costs", 0)),
                           "nota_ebitda": "L'EBITDA comprende i ricavi delle fatture in contenzioso (sono emesse); "
                                          "ebitda_prudente li toglie al netto dell'IVA e degli acconti già incassati. "
                                          "Usa questi valori, non ricalcolarli."},

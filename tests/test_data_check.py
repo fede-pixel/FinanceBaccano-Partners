@@ -69,4 +69,42 @@ def test_supplier_advances_possibly_double_counted(session):
     inv("333", "TD01", date(2026, 7, 18), 540_000)
     session.commit()
     c = {c.title: c for c in data_check.run_checks(session)}["Acconti fornitori forse contati due volte"]
-    assert len(c.items) == 1 and "n. 327" in c.items[0] and "5.400,00" in c.detail
+    assert len(c.actions) == 1 and "n. 327" in c.actions[0]["text"] and "5.400,00" in c.detail
+    # "è corretto": non viene più segnalato
+    session.query(Invoice).filter(Invoice.number == "327").one().cost_treatment = "verificato"
+    session.commit()
+    assert {c.title: c for c in data_check.run_checks(session)}["Acconti fornitori forse contati due volte"].status == "ok"
+
+
+def test_cost_treatment_moves_invoice_out_of_ebitda(client):
+    from app.db import SessionLocal
+    from app.services import kpi
+
+    with SessionLocal() as s:
+        s.add(Invoice(direction="attiva", doc_type="TD01", number="E1", date=date(2026, 3, 1), counterparty="Cliente",
+                      total_cents=1_100_000, vat_cents=100_000, file_name="e", file_hash="e"))
+        s.add(Invoice(direction="passiva", doc_type="TD01", number="FPR 10/26", date=date(2026, 6, 3), counterparty="A&V MOTORS",
+                      total_cents=638_999, vat_cents=115_229, file_name="a", file_hash="a"))
+        s.add(Invoice(direction="passiva", doc_type="TD02", number="ACC", date=date(2026, 7, 29), counterparty="MONDIAL",
+                      total_cents=418_503, vat_cents=75_468, file_name="m", file_hash="m"))
+        s.commit()
+        ids = {i.number: i.id for i in s.query(Invoice)}
+        before = kpi.build(s, today=date(2026, 10, 10))
+    assert before.ytd_ebitda == 1_000_000 - 523_770 - 343_035
+    assert client.post("/fatture/trattamento-costo", data={"invoice_id": ids["FPR 10/26"], "value": "cespite"}).status_code == 200
+    client.post("/fatture/trattamento-costo", data={"invoice_id": ids["ACC"], "value": "escluso"})
+    assert client.post("/fatture/trattamento-costo", data={"invoice_id": ids["E1"], "value": "cespite"}).status_code == 200
+    with SessionLocal() as s:
+        rep = kpi.build(s, today=date(2026, 10, 10))
+        assert s.get(Invoice, ids["E1"]).cost_treatment == ""  # solo fatture ricevute
+        prov = kpi.provisional_view(s, date(2026, 7, 31))
+    assert rep.ytd_ebitda == 1_000_000
+    r = rep.recon
+    assert (r["capex"], r["excluded_costs"]) == (523_770, 343_035)
+    # il confronto con Aruba conta ancora tutte le ricevute e torna all'EBITDA
+    assert r["aruba_like"] == 1_000_000 - 523_770 - 343_035
+    assert r["aruba_like"] - r["self_costs"] - r["personnel"] + r["capex"] + r["excluded_costs"] == rep.ytd_ebitda
+    assert prov.costs_all == 0
+    page = client.get("/verifica").text
+    assert "Fatture fuori dai costi" in page and "Rimetti tra i costi" in page
+    assert "Beni da ammortizzare" in client.get("/kpi").text

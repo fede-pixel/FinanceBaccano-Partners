@@ -224,6 +224,31 @@ def do_dispute(session, fattura_id: int, nota: str) -> str:
     return desc.replace("Metti in contenzioso", "Messa in contenzioso")
 
 
+COST_TREATMENTS = {
+    "cespite": "bene da ammortizzare (esce dai costi dell'EBITDA)",
+    "escluso": "acconto già compreso nella fattura di saldo (non più contato due volte nei costi)",
+    "verificato": "acconto verificato, resta tra i costi",
+    "normale": "costo normale dell'anno",
+}
+
+
+def check_cost_treatment(session, fattura_id: int, trattamento: str) -> str:
+    inv = session.get(Invoice, fattura_id)
+    if inv is None:
+        raise ActionError(f"fattura {fattura_id} inesistente")
+    if inv.direction != "passiva":
+        raise ActionError("vale solo per le fatture ricevute")
+    if trattamento not in COST_TREATMENTS:
+        raise ActionError("trattamento non valido")
+    return f"Segna la {_inv_label(inv)} come {COST_TREATMENTS[trattamento]}."
+
+
+def do_cost_treatment(session, fattura_id: int, trattamento: str) -> str:
+    desc = check_cost_treatment(session, fattura_id, trattamento)
+    session.get(Invoice, fattura_id).cost_treatment = "" if trattamento == "normale" else trattamento
+    return desc.replace("Segna la", "Segnata la", 1)
+
+
 def check_note(session, titolo: str, testo: str) -> str:
     if not titolo.strip():
         raise ActionError("titolo obbligatorio")
@@ -261,6 +286,12 @@ ACTIONS = {
         "non incassato esce da crediti, forecast e investimenti. Se c'è un acconto, proponi PRIMA il collegamento "
         "dell'acconto (proponi_acconto) e poi il contenzioso.",
         {"fattura_id": {"type": "integer"}, "nota": {"type": "string"}}, check_dispute, do_dispute),
+    "proponi_trattamento_costo": (
+        "Propone come contare una fattura ricevuta nei costi dell'anno: 'cespite' per beni da ammortizzare (veicoli, "
+        "macchinari, attrezzature durevoli) solo se l'utente lo conferma; 'escluso' per un acconto TD02 già compreso nella "
+        "fattura di saldo; 'verificato' per un acconto controllato che resta tra i costi; 'normale' per annullare.",
+        {"fattura_id": {"type": "integer"}, "trattamento": {"type": "string", "enum": list(COST_TREATMENTS)}},
+        check_cost_treatment, do_cost_treatment),
     "proponi_nota_commercialista": (
         "Prepara una nota per il commercialista ogni volta che consigli di chiedergli qualcosa (fiscale, bilancio, IVA, "
         "svalutazioni, contratti, adempimenti). Il testo deve essere autonomo e pronto da inviare: domanda chiara, con "

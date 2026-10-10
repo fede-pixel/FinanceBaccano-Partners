@@ -52,6 +52,8 @@
       <tr><td><strong>= Differenza emesse − ricevute</strong></td><td class="num"><strong>{{ r.aruba_like|eur_sign }}</strong></td><td class="num"><strong>{{ r.diff_gross|eur_sign }}</strong></td></tr>
       <tr><td class="muted">di cui IVA (sulle vendite meno quella sugli acquisti): non è guadagno, va versata allo Stato</td><td></td><td class="num muted">{{ r.net_vat|eur_sign }}</td></tr>
       <tr><td>− Autofatture servizi esteri (TD17/TD18: Google, AWS, Anthropic…), costi veri che Aruba non conta nel grafico</td><td class="num">{{ (-r.self_costs)|eur_sign }}</td><td></td></tr>
+      {% if r.capex %}<tr><td>+ Beni da ammortizzare (es. veicoli, macchinari): sono investimenti, non costi dell'anno; il commercialista ne deduce solo la quota di ammortamento</td><td class="num">{{ r.capex|eur_sign }}</td><td></td></tr>{% endif %}
+      {% if r.excluded_costs %}<tr><td>+ Acconti già compresi nella fattura di saldo (altrimenti contati due volte)</td><td class="num">{{ r.excluded_costs|eur_sign }}</td><td></td></tr>{% endif %}
       <tr><td>− Personale (stipendi pagati dalla banca)</td><td class="num">{{ (-r.personnel)|eur_sign }}</td><td></td></tr>
       <tr><td><strong>= EBITDA stimato</strong> (sempre sull'imponibile: l'IVA non è né ricavo né costo)</td><td class="num"><strong>{{ rep.ytd_ebitda|eur_sign }}</strong></td><td></td></tr>
       {% if r.disputed_taxable %}

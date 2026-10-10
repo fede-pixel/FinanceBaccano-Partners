@@ -19,6 +19,8 @@ class Check:
     detail: str
     items: list[str] = field(default_factory=list)
     link: str = ""
+    # righe con pulsanti: {"text": ..., "invoice_id": ..., "buttons": [(trattamento, etichetta), ...]}
+    actions: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -121,6 +123,7 @@ def run_checks(session: Session, today: date | None = None) -> list[Check]:
     passive = [i for i in invoices if i.direction == "passiva" and i.doc_type not in SELF_INVOICE_TYPES]
     used: set[int] = set()
     # dal più recente: ogni saldo si abbina all'acconto più vicino e una sola volta
+    # anche gli acconti già esaminati ("escluso"/"verificato") consumano il loro saldo, ma non vengono più segnalati
     for adv in sorted([i for i in passive if i.doc_type == "TD02" and i.taxable_cents], key=lambda i: i.date, reverse=True):
         later = [i for i in passive if i.id != adv.id and i.id not in used and i.doc_type in ("TD01", "TD24")
                  and i.counterparty == adv.counterparty and adv.date <= i.date <= adv.date + timedelta(days=120) and i.taxable_cents]
@@ -128,15 +131,33 @@ def run_checks(session: Session, today: date | None = None) -> list[Check]:
                       if abs(sum(i.taxable_cents for i in c) - adv.taxable_cents) <= 100), None)
         if found:
             used.update(i.id for i in found)
-            suspects.append((adv, found))
+            if adv.cost_treatment not in ("escluso", "verificato"):
+                suspects.append((adv, found))
     if suspects:
         tot = sum(a.taxable_cents for a, _ in suspects)
         checks.append(Check("Acconti fornitori forse contati due volte", "warn",
                             f"{len(suspects)} fatture di acconto (TD02) hanno una fattura di saldo successiva con lo stesso imponibile: "
                             f"se il saldo non scala l'acconto, il costo è contato due volte e l'EBITDA risulta più basso fino a "
                             f"{fmt_eur(tot)}. Controlla le fatture (il saldo dovrebbe sottrarre l'acconto) e chiedi al commercialista.",
-                            [f"{a.counterparty}: acconto n. {a.number} del {a.date:%d/%m/%Y} ({fmt_eur(a.taxable_cents)}) → saldo "
-                             + ", ".join(f"n. {i.number} del {i.date:%d/%m/%Y}" for i in c) for a, c in suspects[:8]]))
+                            actions=[{"invoice_id": a.id, "text": (
+                                f"{a.counterparty}: acconto n. {a.number} del {a.date:%d/%m/%Y} ({fmt_eur(a.taxable_cents)} imponibile, "
+                                f"{fmt_eur(abs(a.total_cents))} IVA compresa) → saldo "
+                                + ", ".join(f"n. {i.number} del {i.date:%d/%m/%Y} ({fmt_eur(abs(i.total_cents))})" for i in c)),
+                                "buttons": [("escluso", "Il saldo comprende l'acconto: non contarlo due volte"),
+                                            ("verificato", "Sono costi diversi: è corretto")]} for a, c in suspects]))
+    else:
+        checks.append(Check("Acconti fornitori forse contati due volte", "ok", "Nessuno da controllare."))
+
+    capex = [i for i in passive if i.cost_treatment == "cespite"]
+    marked = [i for i in passive if i.cost_treatment == "escluso"]
+    if capex or marked:
+        checks.append(Check("Fatture fuori dai costi dell'EBITDA", "info",
+                            "Beni da ammortizzare e acconti già compresi nel saldo: restano nei totali come su Aruba, "
+                            "ma non sono contati tra i costi dell'anno. Puoi rimetterle tra i costi.",
+                            actions=[{"invoice_id": i.id, "text": (
+                                f"{'Bene da ammortizzare' if i.cost_treatment == 'cespite' else 'Acconto compreso nel saldo'}: "
+                                f"{i.counterparty} n. {i.number} del {i.date:%d/%m/%Y}, {fmt_eur(i.taxable_cents or abs(i.total_cents))} imponibile"),
+                                "buttons": [("", "Rimetti tra i costi")]} for i in capex + marked]))
 
     # 5. movimenti: copertura dei conti
     cov = invoice_match.coverage(session)

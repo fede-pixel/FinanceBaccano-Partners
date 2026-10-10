@@ -154,6 +154,9 @@ class Invoice(Base):
     vat_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)  # IVA; None = non nota (import vecchi)
     # data di ricezione (ricevute) o invio (emesse) sullo SdI: serve a capire cosa aveva il commercialista a una certa data
     received_date: Mapped[_Date | None] = mapped_column(Date, nullable=True)
+    # come conta nei costi dell'anno (solo fatture ricevute): "" normale; "cespite" bene da ammortizzare (fuori dall'EBITDA);
+    # "escluso" acconto già compreso nella fattura di saldo (non va contato due volte); "verificato" acconto controllato, conta normale
+    cost_treatment: Mapped[str] = mapped_column(String(20), default="")
     file_name: Mapped[str] = mapped_column(String(255))
     file_hash: Mapped[str] = mapped_column(String(64), unique=True)
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
