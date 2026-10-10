@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.models import Account, CategoryRule, Transaction
 from app.services import merchant
 
-RULES_VERSION = "3"  # aumentarlo quando cambia la logica: all'avvio le categorie automatiche vengono ricalcolate
+RULES_VERSION = "4"  # aumentarlo quando cambia la logica: all'avvio le categorie automatiche vengono ricalcolate
 INTERNAL = "Giroconti"  # trasferimenti tra conti propri: esclusi dall'analisi
 OTHER = "Altro"
 INCOME = "Entrate"
@@ -162,7 +162,55 @@ def apply(session: Session, txs: list[Transaction] | None = None, cat: Categoriz
         if new != tx.category or tx.category_source != "auto":
             tx.category, tx.category_source = new, "auto"
             changed += 1
+    changed += detect_transfers(session)
     return changed
+
+
+TRANSFER_DAYS = 3
+_TRANSFER_HINT = re.compile(r"top.?up|ricarica|money added|added from|trasferimento|giroconto|giro conto|exchanged|"
+                            r"transfer (to|from)|own account|conto proprio", re.I)
+
+
+def detect_transfers(session: Session) -> int:
+    """Giroconti non dichiarati: un'uscita da un conto e un'entrata di pari importo su un ALTRO conto proprio entro
+    pochi giorni (es. bonifico da BCC e ricarica su Revolut). Senza questo, lo stesso denaro conterebbe come
+    uscita e come entrata, gonfiando i flussi di cassa. Non tocca i movimenti categorizzati a mano o abbinati."""
+    from app.services.util import get_setting
+
+    session.flush()
+    own = [w for w in norm(get_setting(session, "company_name")).split() if len(w) > 2]
+
+    def looks_internal(t: Transaction) -> bool:
+        text = f"{t.counterparty} {t.description}"
+        if _TRANSFER_HINT.search(text):
+            return True
+        words = set(norm(text).split())
+        return bool(own) and all(w in words for w in own)
+
+    txs = list(session.scalars(select(Transaction).where(
+        Transaction.category_source != "manuale", Transaction.planned_item_id.is_(None))))
+    by_amount: dict[int, list[Transaction]] = defaultdict(list)
+    for t in txs:
+        if t.amount_cents > 0:
+            by_amount[t.amount_cents].append(t)
+    used: set[int] = set()
+    n = 0
+    for out in sorted((t for t in txs if t.amount_cents < 0), key=lambda t: t.date):
+        best = None
+        for inc in by_amount.get(-out.amount_cents, ()):
+            if inc.id in used or inc.account_id == out.account_id:
+                continue
+            gap = abs((inc.date - out.date).days)
+            if gap <= TRANSFER_DAYS and (best is None or gap < best[0]):
+                best = (gap, inc)
+        if best and (looks_internal(out) or looks_internal(best[1])):
+            inc = best[1]
+            used.add(inc.id)
+            for t in (out, inc):
+                if t.category != INTERNAL:
+                    t.category, t.category_source = INTERNAL, "auto"
+                    n += 1
+    return n
 
 
 def learn(session: Session, tx: Transaction, category: str) -> tuple[str, int]:

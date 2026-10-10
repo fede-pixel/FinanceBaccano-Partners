@@ -86,3 +86,20 @@ def test_pages_and_assistant_tools(client):
         assert out["ripartizione"][2]["budget"].startswith("0,00")
         k = json.loads(assistant.run_tool(s, "kpi_economici", {"mesi": 12}))
         assert "ebitda" in k["anno_in_corso"]
+
+
+def test_cash_split_and_self_invoices(session):
+    acc = _setup(session)
+    inv = Invoice(direction="passiva", doc_type="TD17", number="AF1", date=date(2026, 9, 5), counterparty="ANTHROPIC",
+                  total_cents=12_200, vat_cents=2_200, file_name="x", file_hash="af")
+    session.add(inv)
+    tx = session.query(Transaction).filter(Transaction.dedupe_key == "i9").one()
+    item = PlannedItem(title="incasso", amount_cents=3_000_000, due_date=tx.date, status="pagato", source="fattura",
+                       invoice_id=session.query(Invoice).filter(Invoice.direction == "attiva").first().id)
+    session.add(item)
+    session.flush()
+    tx.planned_item_id = item.id
+    session.commit()
+    sep = next(m for m in kpi.build(session, 12, TODAY).months if m.key == "2026-09")
+    assert sep.self_invoice_costs == 10_000 and sep.external_costs == 1_010_000
+    assert sep.cash_in_invoices == 3_000_000 and sep.cash_out_invoices == 0

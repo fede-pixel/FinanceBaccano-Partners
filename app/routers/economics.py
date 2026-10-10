@@ -25,9 +25,12 @@ def kpi_page(request: Request, mesi: int = 12, session: Session = Depends(get_se
             {"label": "EBITDA", "values": eur(m.ebitda for m in rep.months), "color": "--series-actual"}]},
         "margin": {"kind": "line", "labelFormat": "month", "labels": labels, "valueFormat": "pct", "title": "Margine EBITDA", "series": [
             {"label": "Margine EBITDA", "values": [m.margin for m in rep.months], "color": "--series-actual"}]},
-        "cashflow": {"kind": "bar", "labelFormat": "month", "labels": labels, "title": "Entrate e uscite di cassa", "series": [
-            {"label": "Entrate", "values": eur(m.cash_in for m in rep.months), "color": "--series-actual"},
-            {"label": "Uscite", "values": eur(m.cash_out for m in rep.months), "color": "--series-forecast"}]},
+        "cashflow": {"kind": "bar", "labelFormat": "month", "labels": labels, "title": "Entrate e uscite di cassa", "stacked": True,
+                     "series": [
+            {"label": "Incassi di fatture", "values": eur(m.cash_in_invoices for m in rep.months), "color": "--series-actual", "stack": "in"},
+            {"label": "Altre entrate", "values": eur(m.cash_in - m.cash_in_invoices for m in rep.months), "color": "--series-3", "stack": "in"},
+            {"label": "Pagamenti di fatture", "values": eur(m.cash_out_invoices for m in rep.months), "color": "--series-forecast", "stack": "out"},
+            {"label": "Altre uscite", "values": eur(m.cash_out - m.cash_out_invoices for m in rep.months), "color": "--series-4", "stack": "out"}]},
         "balance": {"kind": "line", "labelFormat": "month", "labels": labels, "title": "Liquidità a fine mese", "series": [
             {"label": "Liquidità", "values": [None if m.end_balance is None else m.end_balance / 100 for m in rep.months],
              "color": "--series-actual"}]},

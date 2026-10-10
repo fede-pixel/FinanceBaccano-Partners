@@ -143,3 +143,23 @@ def test_transfers_to_people_and_small_firms_are_subcontracts(session):
     # entrate e pagamenti con carta non cambiano
     assert c.category_for("Bonifico da Giorgio Cicero", "", 50000) == "Entrate"
     assert c.category_for("PAGAMENTO POS FERRAMENTA BIANCHI", "", -5000) == "Altro"
+
+
+def test_transfers_between_own_accounts_are_detected(session):
+    from app.models import Setting
+
+    session.add(Setting(key="company_name", value="Baccano Partners"))
+    bcc = Account(name="BCC", bank="BCC")
+    rev = Account(name="Revolut", bank="Revolut")
+    session.add_all([bcc, rev])
+    session.flush()
+    a = _tx(session, bcc, "BONIFICO A FAVORE DI BACCANO PARTNERS SRL", -500000, d=date(2026, 6, 3))
+    b = _tx(session, rev, "Payment from BCC", 500000, d=date(2026, 6, 4))
+    # stesso importo, conti diversi, ma nessun indizio di giroconto: restano entrata e uscita
+    c = _tx(session, bcc, "BONIFICO DA CLIENTE ALFA", 120000, d=date(2026, 6, 10))
+    d = _tx(session, rev, "To Mario Rossi", -120000, d=date(2026, 6, 10))
+    session.flush()
+    cz.seed_rules(session)
+    cz.apply(session)
+    assert a.category == b.category == "Giroconti"
+    assert c.category == "Entrate" and d.category != "Giroconti"

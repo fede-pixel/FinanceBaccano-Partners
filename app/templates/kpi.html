@@ -49,7 +49,8 @@
   <div class="card"><h2>Liquidità a fine mese</h2>
     {{ chart('c-balance', charts.balance, short=true) }}</div>
   <div class="card"><h2>Entrate e uscite di cassa</h2>
-    {{ chart('c-cash', charts.cashflow, [('Entrate', '--series-actual', 'bar'), ('Uscite', '--series-forecast', 'bar')]) }}</div>
+    {{ chart('c-cash', charts.cashflow, [('Incassi di fatture', '--series-actual', 'bar'), ('Altre entrate', '--series-3', 'bar'), ('Pagamenti di fatture', '--series-forecast', 'bar'), ('Altre uscite', '--series-4', 'bar')]) }}
+    <p class="small muted">È la <strong>cassa</strong> (movimenti bancari, IVA compresa, giroconti esclusi), non il fatturato: un mese di fatturato alto si incassa di solito nei mesi dopo. "Altre entrate" sono incassi non collegati a una fattura (finanziamenti, rimborsi, versamenti dei soci, incassi non ancora abbinati); se sono alte, controlla in Fatture da saldare cosa manca da abbinare.</p></div>
   <div class="card"><h2>Principali clienti</h2>
     {% if rep.top_clients %}
     <table class="small"><thead><tr><th>Cliente</th><th class="num">Ricavi</th><th class="num">Quota</th></tr></thead><tbody>
@@ -63,11 +64,11 @@
 <details class="card">
   <summary>Tabella dati mese per mese</summary>
   <div class="table-wrap"><table class="small">
-    <thead><tr><th>Mese</th><th class="num">Ricavi</th><th class="num">Costi fornitori</th><th class="num">Personale</th><th class="num">EBITDA</th><th class="num">Margine</th><th class="num">Entrate cassa</th><th class="num">Uscite cassa</th><th class="num">Flusso netto</th><th class="num">Liquidità fine mese</th></tr></thead>
+    <thead><tr><th>Mese</th><th class="num">Ricavi</th><th class="num">Costi fornitori</th><th class="num">di cui autofatture estere</th><th class="num">Personale</th><th class="num">EBITDA</th><th class="num">Margine</th><th class="num">Entrate cassa</th><th class="num">di cui da fatture</th><th class="num">Uscite cassa</th><th class="num">di cui per fatture</th><th class="num">Flusso netto</th><th class="num">Liquidità fine mese</th></tr></thead>
     <tbody>{% for m in rep.months %}
-      <tr><td>{{ m.key }}</td><td class="num">{{ m.revenue|eur }}</td><td class="num">{{ m.external_costs|eur }}</td><td class="num">{{ m.personnel|eur }}</td>
+      <tr><td>{{ m.key }}</td><td class="num">{{ m.revenue|eur }}</td><td class="num">{{ m.external_costs|eur }}</td><td class="num">{{ m.self_invoice_costs|eur }}</td><td class="num">{{ m.personnel|eur }}</td>
         <td class="num {{ 'neg' if m.ebitda < 0 }}">{{ m.ebitda|eur }}</td><td class="num">{{ pctv(m.margin) }}</td>
-        <td class="num">{{ m.cash_in|eur }}</td><td class="num">{{ m.cash_out|eur }}</td><td class="num">{{ m.net_cash|eur_sign }}</td>
+        <td class="num">{{ m.cash_in|eur }}</td><td class="num">{{ m.cash_in_invoices|eur }}</td><td class="num">{{ m.cash_out|eur }}</td><td class="num">{{ m.cash_out_invoices|eur }}</td><td class="num">{{ m.net_cash|eur_sign }}</td>
         <td class="num">{{ m.end_balance|eur if m.end_balance is not none else '—' }}</td></tr>
     {% endfor %}</tbody>
   </table></div>
@@ -78,6 +79,7 @@
   <ul class="note-list">
     <li><strong>Ricavi</strong>: imponibile delle fatture emesse nel mese (note di credito in negativo).</li>
     <li><strong>Costi fornitori</strong>: imponibile delle fatture ricevute, comprese le autofatture dei servizi esteri (Google, AWS, Anthropic…).</li>
+    <li><strong>Confronto con Aruba</strong>: il grafico "Fatturato" di Aruba usa l'imponibile e non conta le autofatture (TD17/TD18). I <em>Ricavi</em> qui devono coincidere con il suo fatturato attivo; i <em>Costi fornitori</em> sono il suo fatturato passivo + la colonna "di cui autofatture estere" della tabella dati.</li>
     <li><strong>Personale</strong>: stipendi e compensi pagati dalla banca (categoria "Stipendi e collaboratori"). I contributi pagati con F24 non sono distinguibili dalle imposte e sono esclusi.</li>
     <li><strong>EBITDA stimato</strong> = Ricavi − Costi fornitori − Personale. È una misura gestionale: non comprende ratei, risconti, rimanenze e le spese senza fattura elettronica. Il dato di bilancio lo dà il commercialista.</li>
     <li><strong>Cassa</strong>: movimenti bancari dei conti caricati, giroconti esclusi.{% if rep.coverage_start %} Tutti i conti hanno movimenti dal {{ rep.coverage_start|d }}: prima di questa data i dati di cassa sono parziali.{% endif %}</li>

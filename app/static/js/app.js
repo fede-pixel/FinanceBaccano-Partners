@@ -203,8 +203,10 @@
         ? { label: s.label, data: s.values, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: cfg.labels.length > 40 ? 0 : 3,
             pointHoverRadius: 5, tension: 0.15, borderDash: s.dash ? [6, 4] : [], spanGaps: true }
         : { label: s.label, data: s.values, backgroundColor: color, borderRadius: 4, maxBarThickness: cfg.horizontal ? 22 : 26,
-            borderColor: css("--surface"), borderWidth: { top: 0, bottom: 0, left: 1, right: 1 } };
+            borderColor: css("--surface"), borderWidth: cfg.stacked ? { top: 2, bottom: 0, left: 1, right: 1 } : { top: 0, bottom: 0, left: 1, right: 1 },
+            stack: s.stack, borderSkipped: cfg.stacked ? "bottom" : "start" };
     });
+    if (cfg.stacked) { opts.scales.x.stacked = true; opts.scales.y.stacked = true; }
     if (cfg.reference) {
       datasets.push({ type: "line", label: cfg.reference.label, data: cfg.labels.map(() => cfg.reference.value),
         borderColor: css(cfg.reference.color || "--critical"), borderWidth: 1, borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0 });

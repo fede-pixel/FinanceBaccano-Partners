@@ -18,9 +18,9 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Invoice, Transaction
+from app.models import Invoice, PlannedItem, Transaction
 from app.services import categorize, invoice_match
-from app.services.fatturapa import CREDIT_NOTE_TYPES
+from app.services.fatturapa import CREDIT_NOTE_TYPES, SELF_INVOICE_TYPES
 from app.services.forecast import calculators, forecast_accounts
 from app.services.util import add_months
 
@@ -35,8 +35,11 @@ class Month:
     revenue: int = 0
     external_costs: int = 0
     personnel: int = 0
+    self_invoice_costs: int = 0  # di cui autofatture per servizi esteri (escluse dal "fatturato passivo" di Aruba)
     cash_in: int = 0
     cash_out: int = 0
+    cash_in_invoices: int = 0  # entrate collegate a fatture emesse (incassi)
+    cash_out_invoices: int = 0  # uscite collegate a fatture ricevute (pagamenti)
     end_balance: int | None = None
     invoices_without_vat: int = 0
 
@@ -133,19 +136,30 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
             clients[inv.counterparty] += amount
         else:
             r.external_costs += amount
+            if inv.doc_type in SELF_INVOICE_TYPES:
+                r.self_invoice_costs += amount
 
+    # movimenti che saldano una fattura (abbinamento diretto o bonifico unico per più fatture)
+    invoice_tx = {tx_id for (tx_id,) in session.execute(
+        select(Transaction.id).join(PlannedItem, Transaction.planned_item_id == PlannedItem.id).where(PlannedItem.invoice_id.is_not(None)))}
+    invoice_tx |= set(session.scalars(select(PlannedItem.payment_tx_id).where(
+        PlannedItem.payment_tx_id.is_not(None), PlannedItem.invoice_id.is_not(None))))
     txs = session.execute(
-        select(Transaction.date, Transaction.amount_cents, Transaction.category)
+        select(Transaction.id, Transaction.date, Transaction.amount_cents, Transaction.category)
         .where(Transaction.date >= first, Transaction.date <= today)
     )
-    for d, amount, category in txs:
+    for tx_id, d, amount, category in txs:
         r = bucket(d)
         if r is None or category == categorize.INTERNAL:
             continue
         if amount > 0:
             r.cash_in += amount
+            if tx_id in invoice_tx:
+                r.cash_in_invoices += amount
         else:
             r.cash_out += -amount
+            if tx_id in invoice_tx:
+                r.cash_out_invoices += -amount
             if category == PERSONNEL:
                 r.personnel += -amount
 
