@@ -226,6 +226,8 @@ async def invoices_import(
     msg = f"Importate {len(res.imported)} fatture"
     if res.duplicates:
         msg += f", {len(res.duplicates)} già presenti"
+    if res.vat_completed:
+        msg += f" (a {res.vat_completed} è stata aggiunta l'IVA mancante)"
     from app.services import invoice_match
 
     matched = invoice_match.run(session).matched

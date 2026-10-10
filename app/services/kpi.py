@@ -76,6 +76,8 @@ class KPIReport:
     top_clients: list[tuple[str, int, float]] = field(default_factory=list)  # (cliente, ricavi 12 mesi, quota)
     invoices_without_vat: int = 0
     coverage_start: date | None = None
+    ytd_revenue_without_vat: int = 0  # parte dei ricavi dell'anno presa da fatture senza IVA nota (quindi IVA compresa)
+    ytd_revenue_invoices_without_vat: int = 0
 
 
 def _month_start(d: date) -> date:
@@ -123,6 +125,7 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
 
     clients: dict[str, int] = defaultdict(int)
     without_vat = 0
+    ytd_rev_novat = ytd_rev_novat_n = 0
     for inv in session.scalars(select(Invoice).where(Invoice.date >= first, Invoice.date <= today)):
         r = bucket(inv.date)
         if r is None:
@@ -133,6 +136,9 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
             without_vat += 1
         if inv.direction == "attiva":
             r.revenue += amount
+            if missing and inv.date.year == today.year:
+                ytd_rev_novat += amount
+                ytd_rev_novat_n += 1
             clients[inv.counterparty] += amount
         else:
             r.external_costs += amount
@@ -203,5 +209,7 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
         dpo=_paid_days(statuses, "passiva", today - timedelta(days=365)),
         top_clients=top,
         invoices_without_vat=without_vat,
+        ytd_revenue_without_vat=ytd_rev_novat,
+        ytd_revenue_invoices_without_vat=ytd_rev_novat_n,
         coverage_start=invoice_match.coverage(session).start,
     )

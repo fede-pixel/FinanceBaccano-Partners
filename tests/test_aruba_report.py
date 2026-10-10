@@ -98,3 +98,21 @@ def test_report_from_web_and_weekly_upload(client, session):
     session.commit()
     res = weekly.process_batch(session, batch)
     assert res.invoices == 6
+
+
+def test_reimport_completes_missing_vat(session):
+    from app.services import kpi
+
+    content = make_xml(supplier_vat="09876543210", customer_vat="01234567890", numero="7/A").replace(  # fattura emessa
+        b"</DatiGenerali>", b"</DatiGenerali><DatiBeniServizi><DatiRiepilogo><ImponibileImporto>1000.00</ImponibileImporto>"
+                            b"<Imposta>220.00</Imposta></DatiRiepilogo></DatiBeniServizi>")
+    import_invoices(session, [("e.xml", content)], company_vat="09876543210")
+    inv = session.query(Invoice).one()
+    inv.vat_cents = None  # come le fatture importate prima dell'aggiornamento
+    session.commit()
+    rep = kpi.build(session, 12, date(2026, 10, 10))
+    assert rep.ytd_revenue_without_vat == 122000 and rep.invoices_without_vat == 1
+    res = import_invoices(session, [("e.xml", content)], company_vat="09876543210")
+    assert not res.imported and res.vat_completed == 1
+    assert inv.vat_cents == 22000 and inv.taxable_cents == 100000
+    assert kpi.build(session, 12, date(2026, 10, 10)).ytd_revenue == 100000

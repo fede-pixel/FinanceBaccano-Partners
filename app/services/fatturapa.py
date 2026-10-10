@@ -291,6 +291,7 @@ def _import_report(session, res, name, content, forced_direction, default_paymen
         if dup is not None:
             if dup.vat_cents is None and r.vat_cents is not None:
                 dup.vat_cents = r.vat_cents  # ricaricando il report si completano le fatture importate senza IVA
+                res.vat_completed += 1
             res.duplicates.append(r.number)
             continue
         invoice = Invoice(
@@ -333,6 +334,7 @@ def _import_report(session, res, name, content, forced_direction, default_paymen
 class InvoiceImportResult:
     imported: list[Invoice] = field(default_factory=list)
     duplicates: list[str] = field(default_factory=list)
+    vat_completed: int = 0  # fatture già presenti a cui è stata aggiunta l'IVA
     errors: list[str] = field(default_factory=list)
 
 
@@ -360,7 +362,20 @@ def import_invoices(
             continue
         for name, data in entries:
             file_hash = hashlib.sha256(data).hexdigest()
-            if session.scalar(select(Invoice.id).where(Invoice.file_hash == file_hash)):
+            dups = list(session.scalars(select(Invoice).where(
+                (Invoice.file_hash == file_hash) | Invoice.file_hash.like(f"{file_hash[:56]}-%"))))
+            if dups:
+                if any(d.vat_cents is None for d in dups):
+                    # file già importato prima che l'app salvasse l'IVA: la completo senza duplicare
+                    try:
+                        parsed = parse_invoice_xml(extract_xml(data))
+                    except Exception:
+                        parsed = []
+                    for d in dups:
+                        i = 0 if d.file_hash == file_hash else int(d.file_hash.rsplit("-", 1)[1])
+                        if d.vat_cents is None and i < len(parsed) and parsed[i].vat_cents is not None:
+                            d.vat_cents = parsed[i].vat_cents
+                            res.vat_completed += 1
                 res.duplicates.append(name)
                 continue
             try:
@@ -393,6 +408,7 @@ def import_invoices(
                 elif old is not None:
                     if old.vat_cents is None and inv.vat_cents is not None:
                         old.vat_cents = inv.vat_cents
+                        res.vat_completed += 1
                     res.duplicates.append(name)
                     continue
                 invoice = Invoice(

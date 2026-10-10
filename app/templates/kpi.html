@@ -14,12 +14,12 @@
 </div>
 
 {% if rep.invoices_without_vat %}
-<div class="alert warn small"><strong>{{ rep.invoices_without_vat }} fatture senza IVA indicata</strong> (importate prima di questo aggiornamento): per loro si usa il totale, quindi ricavi e costi risultano un po' più alti. Ricarica una volta i report di Aruba (ricevute ed emesse) o gli XML: l'app completa l'IVA senza creare doppioni.</div>
+<div class="alert warn small"><strong>{{ rep.invoices_without_vat }} fatture senza IVA indicata</strong> (importate prima di questo aggiornamento): per loro si usa il totale, quindi ricavi e costi risultano un po' più alti. Ricarica una volta da <a href="/fatture">Fatture (Aruba)</a> i report Excel (ricevute ed emesse) oppure gli stessi XML/ZIP: l'app aggiunge l'IVA alle fatture già presenti senza creare doppioni, e il messaggio ti dice a quante l'ha aggiunta.</div>
 {% endif %}
 
 <div class="kpis">
   <div class="kpi"><div class="label">Ricavi dell'anno</div><div class="value">{{ rep.ytd_revenue|eur }}</div>
-    <div class="sub">{% if rep.revenue_growth is not none %}ultimi 3 mesi {{ '+' if rep.revenue_growth >= 0 }}{{ pctv(rep.revenue_growth) }} sui 3 precedenti{% else %}imponibile fatture emesse{% endif %}</div></div>
+    <div class="sub">{% if rep.ytd_revenue_without_vat %}<span class="neg">di cui {{ rep.ytd_revenue_without_vat|eur }} IVA compresa ({{ rep.ytd_revenue_invoices_without_vat }} fatture senza IVA indicata)</span>{% elif rep.revenue_growth is not none %}ultimi 3 mesi {{ '+' if rep.revenue_growth >= 0 }}{{ pctv(rep.revenue_growth) }} sui 3 precedenti{% else %}imponibile fatture emesse{% endif %}</div></div>
   <div class="kpi"><div class="label">EBITDA dell'anno (stimato)</div><div class="value {{ 'neg' if rep.ytd_ebitda < 0 }}">{{ rep.ytd_ebitda|eur }}</div>
     <div class="sub">margine {{ pctv(rep.ytd_margin) }}</div></div>
   <div class="kpi"><div class="label">Flusso di cassa dell'anno</div><div class="value {{ 'neg' if rep.ytd_cash < 0 }}">{{ rep.ytd_cash|eur_sign }}</div>
