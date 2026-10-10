@@ -183,6 +183,10 @@ class PlannedItem(Base):
     settlement: Mapped[str] = mapped_column(String(20), default="")
     # movimento che salda la voce quando un unico bonifico paga più fatture (per una sola fattura basta tx.planned_item_id)
     payment_tx_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # lotto della "Conferma tutte" con cui è stata abbinata: permette di annullare la conferma in blocco
+    match_batch: Mapped[str] = mapped_column(String(20), default="")
+    # era già segnata pagata (senza movimento) prima dell'abbinamento: scollegando si torna a quella data
+    prior_paid_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     account: Mapped[Account | None] = relationship()
     invoice: Mapped[Invoice | None] = relationship(back_populates="planned_items")

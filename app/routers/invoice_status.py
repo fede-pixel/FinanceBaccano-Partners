@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.models import PlannedItem, Transaction
 from app.services import invoice_match, reconcile
-from app.services.util import parse_date
+from app.services.util import get_setting, parse_date, set_setting
 from app.web import redirect, render
 
 router = APIRouter()
@@ -22,9 +22,11 @@ VIEWS = {
 }
 
 
-def _rows(session: Session, vista: str, q: str = "") -> list[invoice_match.InvoiceStatus]:
+def _rows(session: Session, vista: str, q: str = "", lotto: str = "") -> list[invoice_match.InvoiceStatus]:
     direction, states, _ = VIEWS[vista]
     rows = [s for s in invoice_match.invoice_statuses(session, direction) if s.state in states]
+    if lotto:
+        rows = [s for s in rows if any(it.match_batch == lotto for it in s.items)]
     if q:
         ql = q.lower()
         rows = [s for s in rows if ql in s.invoice.counterparty.lower() or ql in s.invoice.number.lower()]
@@ -36,7 +38,7 @@ def _rows(session: Session, vista: str, q: str = "") -> list[invoice_match.Invoi
 
 
 @router.get("/fatture/situazione")
-def situation(request: Request, vista: str = "pagare", q: str = "", session: Session = Depends(get_session)):
+def situation(request: Request, vista: str = "pagare", q: str = "", lotto: str = "", session: Session = Depends(get_session)):
     if vista not in VIEWS:
         vista = "pagare"
     result = invoice_match.run(session)  # gli abbinamenti certi si fanno da soli a ogni apertura
@@ -59,11 +61,38 @@ def situation(request: Request, vista: str = "pagare", q: str = "", session: Ses
         if result.compensated:
             auto += f", {result.compensated} note di credito compensate"
         msg = f"{msg} · {auto}" if msg else auto
+    last = get_setting(session, "last_match_batch").split("|")  # lotto|data e ora dell'ultima "Conferma tutte"
+    last_batch = last[0] if invoice_match.batch_size(session, last[0]) else ""
     return render(
-        request, "invoice_status.html", vista=vista, views=VIEWS, q=q, rows=_rows(session, vista, q),
-        proposals=result.proposals, msg=msg,
+        request, "invoice_status.html", vista=vista, views=VIEWS, q=q, rows=_rows(session, vista, q, lotto),
+        proposals=result.proposals, msg=msg, lotto=lotto,
+        last_batch=last_batch, last_batch_at=last[1] if len(last) > 1 else "",
+        last_batch_size=invoice_match.batch_size(session, last_batch),
         k_pay=kpi("passiva"), k_inc=kpi("attiva"), k_pres=kpi(None, "presunta"), k_paid=kpi(None, "pagata"),
     )
+
+
+@router.post("/fatture/situazione/conferma-tutte")
+def confirm_all(session: Session = Depends(get_session)):
+    from datetime import datetime
+
+    batch, n = invoice_match.confirm_all(session)
+    if n:
+        set_setting(session, "last_match_batch", f"{batch}|{datetime.now():%d/%m/%Y %H:%M}")
+    session.commit()
+    if not n:
+        return redirect("/fatture/situazione", msg="Nessuna proposta da confermare")
+    return redirect(f"/fatture/situazione?vista=pagate&lotto={batch}",
+                    msg=f"Confermati in blocco {n} abbinamenti: qui sotto solo quelli, controllali. Puoi annullarli tutti con un clic.")
+
+
+@router.post("/fatture/situazione/annulla-lotto")
+def undo_batch(lotto: str = Form(...), session: Session = Depends(get_session)):
+    n = invoice_match.undo_batch(session, lotto)
+    if get_setting(session, "last_match_batch").startswith(lotto):
+        set_setting(session, "last_match_batch", "")
+    session.commit()
+    return redirect("/fatture/situazione", msg=f"Annullata la conferma in blocco: {n} fatture tornano da saldare e le proposte da confermare")
 
 
 def _ids(raw: str) -> list[int]:

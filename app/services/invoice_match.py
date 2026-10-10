@@ -114,9 +114,15 @@ def _amount_ok(tx: Transaction, it: PlannedItem) -> bool:
                                                     and len(it.invoice.planned_items) == 1)
 
 
+def _remember_presumed(it: PlannedItem) -> None:
+    if it.status == "pagato" and it.settlement == "" and not it.transactions and not it.payment_tx_id:
+        it.prior_paid_date = it.paid_date or it.due_date
+
+
 def settle(session: Session, tx: Transaction, items: list[PlannedItem]) -> None:
     """Collega il movimento alle scadenze che salda."""
     for n, it in enumerate(items):
+        _remember_presumed(it)
         it.status, it.paid_date, it.settlement = "pagato", tx.date, "movimento"
         if it.account_id is None:
             it.account_id = tx.account_id
@@ -129,6 +135,7 @@ def settle(session: Session, tx: Transaction, items: list[PlannedItem]) -> None:
 
 def settle_installments(session: Session, txs: list[Transaction], item: PlannedItem) -> None:
     """Più movimenti (acconti) che insieme saldano la stessa scadenza."""
+    _remember_presumed(item)
     for tx in txs:
         tx.planned_item = item
     item.status, item.paid_date, item.settlement = "pagato", max(t.date for t in txs), "movimento"
@@ -296,6 +303,7 @@ def run(session: Session, apply: bool = True) -> MatchResult:
     for tx_id, cands in exact.items():
         for it in cands:
             claims[it.id].append(tx_id)
+    proposed_it: set[int] = set()
     for tx_id, cands in sorted(exact.items(), key=lambda kv: tx_by_id[kv[0]].date):
         tx = tx_by_id[tx_id]
         free = [it for it in cands if it.id not in used_it]
@@ -310,7 +318,10 @@ def run(session: Session, apply: bool = True) -> MatchResult:
             else:
                 res.proposals.append(Proposal([tx], free, "Stesso importo"))
             continue
-        best = min(free, key=lambda it: (it.status != "previsto", abs((tx.date - it.due_date).days)))
+        # più candidati: propongo il più plausibile non già proposto per un altro movimento (la più vecchia aperta)
+        pick = [it for it in free if it.id not in proposed_it] or free
+        best = min(pick, key=lambda it: (it.status != "previsto", it.due_date > tx.date, it.due_date))
+        proposed_it.add(best.id)
         res.proposals.append(Proposal([tx], [best], f"Stesso importo, ma ci sono {max(len(free), len(claims[best.id]))} "
                                                     "fatture o movimenti con questo importo: scegli tu"))
 
@@ -416,3 +427,61 @@ def invoice_statuses(session: Session, direction: str | None = None) -> list[Inv
             items=items,
         ))
     return out
+
+
+# ---------- conferma in blocco (e annullamento) ----------
+
+def confirm_all(session: Session) -> tuple[str, int]:
+    """Conferma tutte le proposte "Da confermare" con un unico lotto annullabile. Restituisce (lotto, fatture saldate)."""
+    import uuid
+
+    res = run(session)
+    batch = uuid.uuid4().hex[:10]
+    used_tx: set[int] = set()
+    used_it: set[int] = set()
+    n = 0
+    for p in res.proposals:
+        tx_ids = {t.id for t in p.transactions}
+        it_ids = {it.id for it in p.items}
+        if tx_ids & used_tx or it_ids & used_it:  # proposte in conflitto: vale la prima
+            continue
+        used_tx |= tx_ids
+        used_it |= it_ids
+        if len(p.transactions) > 1:
+            settle_installments(session, p.transactions, p.items[0])
+        else:
+            settle(session, p.transactions[0], p.items)
+        for it in p.items:
+            it.match_batch = batch
+        n += len(p.items)
+    session.flush()
+    return batch, n
+
+
+def undo_batch(session: Session, batch: str) -> int:
+    """Annulla tutti gli abbinamenti confermati in blocco con quel lotto: le fatture tornano da saldare."""
+    from app.services import reconcile
+
+    if not batch:
+        return 0
+    items = list(session.scalars(select(PlannedItem).where(PlannedItem.match_batch == batch)))
+    txs: dict[int, Transaction] = {}
+    for it in items:
+        for t in it.transactions:
+            txs[t.id] = t
+        if it.payment_tx_id:
+            t = session.get(Transaction, it.payment_tx_id)
+            if t:
+                txs[t.id] = t
+    for t in txs.values():
+        reconcile.unmatch(session, t)
+    for it in items:
+        it.match_batch = ""
+    session.flush()
+    return len(items)
+
+
+def batch_size(session: Session, batch: str) -> int:
+    if not batch:
+        return 0
+    return len(list(session.scalars(select(PlannedItem.id).where(PlannedItem.match_batch == batch))))

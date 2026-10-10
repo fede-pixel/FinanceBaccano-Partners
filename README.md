@@ -107,6 +107,8 @@ Il controllo parte da solo a ogni caricamento di movimenti o fatture e a ogni ap
 - **acconti**: più pagamenti alla stessa controparte che sommati danno esattamente l'importo della fattura vengono proposti in **Da confermare** (conferma manuale);
 - note di credito di pari importo compensano la fattura.
 
+**Conferma tutte** conferma in un colpo tutte le proposte da confermare; la pagina mostra poi solo quegli abbinamenti e il pulsante **Annulla la conferma in blocco** riporta tutto esattamente com'era (anche le fatture che erano "pagate senza movimento").
+
 Ogni vista si scarica in Excel. "Segna pagata" serve per i pagamenti da conti non caricati in app.
 
 ## Analisi spese

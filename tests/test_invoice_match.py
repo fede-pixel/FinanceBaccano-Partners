@@ -172,3 +172,40 @@ def test_situation_page_and_export(client):
     assert r.status_code == 303
     assert "Fornitore Beta" in client.get("/fatture/situazione?vista=pagate").text
 
+
+
+def test_confirm_all_and_undo(client):
+    from app.db import SessionLocal
+
+    with SessionLocal() as s:
+        acc = _acc(s)
+        _inv(s, "10", "Delta Srl", 12000, date(2026, 9, 1))
+        _inv(s, "20", "Epsilon Srl", 12000, date(2026, 9, 3))
+        _tx(s, acc, date(2026, 9, 20), -12000, "DISPOSIZIONE DI PAGAMENTO")
+        _tx(s, acc, date(2026, 9, 22), -12000, "DISPOSIZIONE DI PAGAMENTO 2")
+        inv = _inv(s, "55", "Ditta Paolo Bucefalo", 150000, date(2026, 6, 30))
+        _tx(s, acc, date(2026, 5, 10), -100000, "Bonifico Paolo Bucefalo acconto")
+        _tx(s, acc, date(2026, 6, 10), -50000, "Bonifico Bucefalo Paolo saldo")
+        _inv(s, "99", "Zeta Srl", 7000, date(2026, 9, 1))  # nessun pagamento: resta aperta
+        s.commit()
+    page = client.get("/fatture/situazione")
+    assert "Da confermare (3)" in page.text and "Conferma tutte" in page.text
+    r = client.post("/fatture/situazione/conferma-tutte", follow_redirects=False)
+    loc = r.headers["location"]
+    assert r.status_code == 303 and "lotto=" in loc
+    lotto = loc.split("lotto=")[1].split("&")[0]
+    with SessionLocal() as s:
+        states = {x.invoice.number: x.state for x in im.invoice_statuses(s)}
+        assert states == {"10": "pagata", "20": "pagata", "55": "pagata", "99": "aperta"}
+    paid = client.get(f"/fatture/situazione?vista=pagate&lotto={lotto}")
+    assert "Annulla la conferma in blocco" in paid.text and "Solo conferma in blocco" in paid.text
+    assert "Da confermare (" not in paid.text
+    # prova inversa: annullo tutto e torno alla situazione di partenza
+    r = client.post("/fatture/situazione/annulla-lotto", data={"lotto": lotto}, follow_redirects=False)
+    assert r.status_code == 303
+    with SessionLocal() as s:
+        states = {x.invoice.number: x.state for x in im.invoice_statuses(s)}
+        assert states == {"10": "aperta", "20": "aperta", "55": "aperta", "99": "aperta"}
+        assert s.query(Transaction).filter(Transaction.planned_item_id.is_not(None)).count() == 0
+    page = client.get("/fatture/situazione")
+    assert "Da confermare (3)" in page.text and "Annulla la conferma in blocco" not in page.text

@@ -75,10 +75,16 @@ def unmatch(session: Session, tx: Transaction) -> None:
         for other in list(item.transactions):  # acconti: si scollegano tutti insieme e la fattura torna aperta
             other.planned_item = None
     if item and not item.transactions:
-        item.status = "previsto"
-        item.paid_date = None
-        item.settlement = ""
-        item.payment_tx_id = None
+        _reopen(item)
     # altre fatture saldate dallo stesso bonifico
     for other in session.scalars(select(PlannedItem).where(PlannedItem.payment_tx_id == tx.id)):
-        other.status, other.paid_date, other.settlement, other.payment_tx_id = "previsto", None, "", None
+        _reopen(other)
+
+
+def _reopen(item: PlannedItem) -> None:
+    """Toglie il pagamento: torna aperta, oppure "pagata senza movimento" se lo era prima dell'abbinamento."""
+    if item.prior_paid_date:
+        item.status, item.paid_date = "pagato", item.prior_paid_date
+    else:
+        item.status, item.paid_date = "previsto", None
+    item.settlement, item.payment_tx_id, item.match_batch, item.prior_paid_date = "", None, "", None
