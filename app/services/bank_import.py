@@ -182,6 +182,13 @@ def _header_columns(line: list[dict]) -> list[tuple[float, float, str]]:
     return [tuple(c) for c in cols]
 
 
+_AMOUNT_TOKEN = re.compile(r"^[(+\-\u2212\u2013]?\s*(?:€|EUR)?\s*[\d.,' ]+\d\s*(?:€|EUR)?\)?-?$", re.I)
+
+
+def _looks_like_amount(text: str) -> bool:
+    return bool(_AMOUNT_TOKEN.match(text.strip())) and not _starts_with_date(text)
+
+
 def _assign(line: list[dict], cols: list[tuple[float, float, str]]) -> list[str]:
     cells = [""] * len(cols)
     for w in line:
@@ -193,7 +200,7 @@ def _assign(line: list[dict], cols: list[tuple[float, float, str]]) -> list[str]
             i = 0
         else:
             # testo lungo che sborda: va alla colonna che inizia più vicino alla sua sinistra; numeri al centro più vicino
-            numeric = re.fullmatch(r"[-+]?[\d.,]+-?", w["text"]) is not None
+            numeric = _looks_like_amount(w["text"]) or w["text"].upper() in ("€", "EUR", "-", "+", "\u2212")
             if numeric:
                 i = min(range(len(cols)), key=lambda k: abs((cols[k][0] + cols[k][1]) / 2 - center))
             else:
@@ -227,9 +234,15 @@ def _pdf_by_position(pdf) -> list[list[str]]:
             elif last_top is not None and 0 < top - last_top <= 24:
                 # riga di continuazione (descrizione su più righe), vicina alla precedente:
                 # accodo solo testo, mai nella colonna della data; piè di pagina e note lontane vengono ignorati
+                # e importi stampati un po' più in basso della data (centrati su righe alte): riempiono le celle vuote
                 prev = out[-1]
                 for i, c in enumerate(cells[1:], start=1):
-                    if c and not re.fullmatch(r"[-+]?[\d.,]+-?", c):
+                    if not c:
+                        continue
+                    if _looks_like_amount(c):
+                        if not prev[i]:
+                            prev[i] = c
+                    else:
                         prev[i] = (prev[i] + " " + c).strip()
                 last_top = top
     return out
@@ -455,9 +468,11 @@ def parse_rows(rows: list[list[str]], p: ImportProfile) -> tuple[list[ParsedTx],
             a_out = parse_amount(get(row, p.out_col), dec) or 0
             amount = abs(a_in) - abs(a_out)
         else:
-            amount = parse_amount(get(row, p.amount_col), dec)
+            raw_amount = get(row, p.amount_col)
+            amount = parse_amount(raw_amount, dec)
             if amount is None:
-                errors.append(f"Riga {n}: importo non riconosciuto")
+                shown = f"'{raw_amount[:40]}'" if raw_amount else "cella vuota"
+                errors.append(f"Riga {n}: importo non riconosciuto ({shown})")
                 continue
         if p.invert_sign:
             amount = -amount

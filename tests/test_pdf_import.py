@@ -152,3 +152,36 @@ def test_boxed_header_and_footer_with_free_text_rows():
     txs, errors = parse_rows(rows, p)
     assert [(t.date.day, t.amount_cents) for t in txs] == [(1, -4520), (2, 100000), (3, -900)], rows[:6]
     assert not errors
+
+
+def test_offset_amounts_and_wide_numbers():
+    """Importo stampato più in basso della data (descrizione su due righe) e più largo dell'intestazione."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    xs = [40, 140, 220, 440, 515]
+    for i, h in enumerate(["Data transazione", "Tipo", "Descrizione", "Importo", "Saldo"]):
+        c.drawString(xs[i], 760, h)
+    y = 735
+    for d, t, d1, d2, amt, bal in [
+        ("01.10.2026", "Carta", "Pagamento carta", "AMAZON EU SARL LUX", "\u221212.345,20 €", "954,80 €"),
+        ("02.10.2026", "Bonifico", "Bonifico in entrata", "ROSSI MARIO", "+1.000,00 €", "1.954,80 €"),
+    ]:
+        c.drawString(xs[0], y, d)
+        c.drawString(xs[1], y, t)
+        c.drawString(xs[2], y, d1)
+        c.drawString(xs[2], y - 11, d2)
+        c.drawRightString(xs[3] + 55, y - 6, amt)   # centrato in verticale e più largo dell'intestazione
+        c.drawRightString(xs[4] + 60, y - 6, bal)
+        y -= 30
+    c.save()
+    rows = read_table(buf.getvalue(), "vivid.pdf")
+    txs, errors = parse_rows(rows, guess_profile(rows))
+    assert [t.amount_cents for t in txs] == [-1234520, 100000], (rows, errors)
+    assert txs[0].description == "Pagamento carta AMAZON EU SARL LUX"
+    assert not errors
+
+
+def test_error_message_shows_raw_amount():
+    rows = [["Data", "Descrizione", "Importo"], ["01/10/2026", "x", "n.d."], ["02/10/2026", "y", ""]]
+    _, errors = parse_rows(rows, guess_profile(rows))
+    assert errors == ["Riga 2: importo non riconosciuto ('n.d.')", "Riga 3: importo non riconosciuto (cella vuota)"]
