@@ -285,3 +285,19 @@ def counterparty_page(request: Request, q: str = "", session: Session = Depends(
 
     led = counterparty.build(session, q) if q.strip() else None
     return render(request, "counterparty.html", q=q, led=led)
+
+
+@router.post("/controparte/acconto")
+def link_advance(tx_id: int = Form(...), invoice_id: int = Form(...), q: str = Form(""), session: Session = Depends(get_session)):
+    """Collega un movimento a una fattura: pagamento completo se l'importo coincide, altrimenti acconto."""
+    from urllib.parse import quote
+
+    from app.services import assistant_actions
+
+    back = f"/controparte?q={quote(q)}"
+    try:
+        msg = assistant_actions.do_advance(session, tx_id, invoice_id)
+    except assistant_actions.ActionError as exc:
+        return redirect(back, err=str(exc))
+    session.commit()
+    return redirect(back, msg=msg)

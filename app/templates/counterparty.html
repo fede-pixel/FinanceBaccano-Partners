@@ -68,8 +68,13 @@
     <h2>Movimenti con questo nome non abbinati a fatture ({{ led.unlinked_total|eur }})</h2>
     <p class="small muted">Probabili incassi o pagamenti di queste fatture (acconti, importi diversi, bonifici cumulativi). Abbinali da <a href="/fatture/situazione">Fatture da saldare</a> o da Riconciliazione per chiudere le fatture.</p>
     <div class="table-wrap"><table class="small">
-      <thead><tr><th>Data</th><th>Conto</th><th>Descrizione</th><th class="num">Importo</th></tr></thead>
-      <tbody>{% for t in led.unlinked %}<tr><td>{{ t.date|d }}</td><td>{{ t.account.name }}</td><td>{{ t.description }}</td><td>{{ amount(t.amount_cents) }}</td></tr>{% endfor %}</tbody>
+      <thead><tr><th>Data</th><th>Conto</th><th>Descrizione</th><th class="num">Importo</th><th>Collega come acconto/pagamento a</th></tr></thead>
+      <tbody>{% for t in led.unlinked %}<tr><td>{{ t.date|d }}</td><td>{{ t.account.name }}</td><td>{{ t.description }}</td><td>{{ amount(t.amount_cents) }}</td>
+        <td>{% set targets = led.invoices|selectattr('state', 'in', ['aperta', 'contenzioso'])|list %}
+          {% if targets %}<form method="post" action="/controparte/acconto" style="display:flex;gap:6px">
+            <input type="hidden" name="tx_id" value="{{ t.id }}"><input type="hidden" name="q" value="{{ q }}">
+            <select name="invoice_id">{% for s in targets %}<option value="{{ s.invoice.id }}">n. {{ s.invoice.number }} – {{ (s.open_cents or s.disputed_cents)|eur }}{{ ' (contenzioso)' if s.state == 'contenzioso' }}</option>{% endfor %}</select>
+            <button class="small">Collega</button></form>{% else %}<span class="muted">nessuna fattura aperta</span>{% endif %}</td></tr>{% endfor %}</tbody>
     </table></div>
   </div>
   {% endif %}

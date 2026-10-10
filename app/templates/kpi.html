@@ -21,7 +21,8 @@
   <div class="kpi"><div class="label">Ricavi dell'anno</div><div class="value">{{ rep.ytd_revenue|eur }}</div>
     <div class="sub">{% if rep.ytd_revenue_without_vat %}<span class="neg">di cui {{ rep.ytd_revenue_without_vat|eur }} IVA compresa ({{ rep.ytd_revenue_invoices_without_vat }} fatture senza IVA indicata)</span>{% elif rep.revenue_growth is not none %}ultimi 3 mesi {{ '+' if rep.revenue_growth >= 0 }}{{ pctv(rep.revenue_growth) }} sui 3 precedenti{% else %}imponibile fatture emesse{% endif %}</div></div>
   <div class="kpi"><div class="label">EBITDA dell'anno (stimato)</div><div class="value {{ 'neg' if rep.ytd_ebitda < 0 }}">{{ rep.ytd_ebitda|eur }}</div>
-    <div class="sub">margine {{ pctv(rep.ytd_margin) }}</div></div>
+    <div class="sub">margine {{ pctv(rep.ytd_margin) }}
+      {% if rep.recon.disputed_taxable %}<br>prudente <strong>{{ rep.recon.ebitda_prudent|eur }}</strong>: senza i {{ rep.recon.disputed_taxable|eur }} (imponibile) di crediti in contenzioso{% endif %}</div></div>
   <div class="kpi"><div class="label">Flusso di cassa dell'anno</div><div class="value {{ 'neg' if rep.ytd_cash < 0 }}">{{ rep.ytd_cash|eur_sign }}</div>
     <div class="sub">entrate − uscite bancarie, giroconti esclusi</div></div>
   <div class="kpi"><div class="label">Liquidità oggi</div><div class="value">{{ rep.balance_today|eur }}</div>
@@ -30,7 +31,7 @@
 <div class="kpis">
   <div class="kpi"><div class="label">Crediti da incassare</div><div class="value">{{ rep.receivables|eur }}</div>
     <div class="sub">{% if rep.receivables_overdue %}<span class="neg">di cui scaduti {{ rep.receivables_overdue|eur }}</span>{% else %}nessuno scaduto{% endif %}
-      {% if rep.disputed or rep.lost %}<br><a href="/fatture/situazione?vista=contenzioso">+ {{ rep.disputed|eur }} in contenzioso{% if rep.lost %}, {{ rep.lost|eur }} stralciati{% endif %}</a> (esclusi){% endif %}</div></div>
+      {% if rep.disputed or rep.lost %}<br><a href="/fatture/situazione?vista=contenzioso">+ {{ rep.disputed|eur }} IVA compresa in contenzioso{% if rep.lost %}, {{ rep.lost|eur }} stralciati{% endif %}</a> (esclusi; al netto degli acconti collegati){% endif %}</div></div>
   <div class="kpi"><div class="label">Debiti verso fornitori</div><div class="value">{{ rep.payables|eur }}</div>
     <div class="sub">{% if rep.payables_overdue %}<span class="neg">di cui scaduti {{ rep.payables_overdue|eur }}</span>{% else %}nessuno scaduto{% endif %}</div></div>
   <div class="kpi"><div class="label">Tempo medio di incasso (DSO)</div><div class="value">{{ '—' if rep.dso is none else rep.dso|round|int ~ ' gg' }}</div>

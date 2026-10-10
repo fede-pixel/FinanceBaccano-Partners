@@ -63,3 +63,23 @@ def test_page(client):
     assert page.status_code == 200 and "BARONE COSTRUZIONI SRL" in page.text and "Residuo da incassare" in page.text
     assert "BON. DA BARONE COSTR. ACCONTO" in page.text and "ALTRO CLIENTE" not in page.text.split("Movimenti con questo nome")[1]
     assert client.get("/controparte?q=zzzz").status_code == 200
+
+
+def test_link_advance_from_ledger_page(client):
+    from app.db import SessionLocal
+    from app.services import invoice_match as im
+
+    with SessionLocal() as s:
+        _setup(s)
+        inv_id = s.query(Invoice).filter(Invoice.number == "2").one().id
+        tx_id = s.query(Transaction).filter(Transaction.dedupe_key == "b").one().id
+        item = s.query(PlannedItem).filter(PlannedItem.invoice_id == inv_id).one()
+        im.set_dispute([item], "legali")
+        s.commit()
+    page = client.get("/controparte?q=Barone")
+    assert "Collega come acconto" in page.text and "(contenzioso)" in page.text
+    client.post("/controparte/acconto", data={"tx_id": tx_id, "invoice_id": inv_id, "q": "Barone"})
+    with SessionLocal() as s:
+        st = next(x for x in im.invoice_statuses(s) if x.invoice.id == inv_id)
+        assert st.state == "contenzioso" and st.disputed_cents == 1_800_000 - 900_000
+        assert s.get(Transaction, tx_id).planned_item_id
