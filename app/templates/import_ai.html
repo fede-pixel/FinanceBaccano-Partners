@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import amount %}
+{% block title %}Anteprima lettura AI{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Lettura con AI – {{ account.name }}</h1>
+  <div class="muted">Controlla i movimenti letti dal PDF, poi conferma l'import.</div></div>
+  <a href="/movimenti/import/{{ token }}?conto={{ account.id }}">← Torna alla lettura automatica</a>
+</div>
+
+{% if iban_mismatch %}
+<div class="alert err">Attenzione: l'IBAN nel documento ({{ result.account_iban }}) è diverso da quello del conto "{{ account.name }}" ({{ account.iban }}). Controlla di aver scelto il conto giusto.</div>
+{% endif %}
+
+<div class="kpis">
+  <div class="kpi"><div class="label">Movimenti letti</div><div class="value">{{ result.transactions|length }}</div>
+    <div class="sub">{% if result.transactions %}dal {{ (result.transactions|map(attribute='date')|min)|d }} al {{ (result.transactions|map(attribute='date')|max)|d }}{% endif %}</div></div>
+  <div class="kpi"><div class="label">Saldo dei movimenti</div><div class="value">{{ total|eur_sign }}</div>
+    <div class="sub">entrate {{ result.transactions|selectattr('amount_cents', '>', 0)|sum(attribute='amount_cents')|eur }} · uscite {{ (-(result.transactions|selectattr('amount_cents', '<', 0)|sum(attribute='amount_cents')))|eur }}</div></div>
+  <div class="kpi"><div class="label">Documento</div><div class="value" style="font-size:16px">{{ result.bank_name or '—' }}</div>
+    <div class="sub">{{ result.account_iban }} {{ result.currency }}</div></div>
+  <div class="kpi"><div class="label">Costo di questa lettura</div><div class="value" style="font-size:18px">{{ ('≈ %.2f €'|format(cost)).replace('.', ',') if cost is not none else '—' }}</div>
+    <div class="sub">{{ result.input_tokens }} token letti · {{ result.output_tokens }} scritti · {{ result.model }}</div></div>
+</div>
+
+<form method="post" action="/movimenti/import/{{ token }}/ai/conferma?conto={{ account.id }}">
+<div class="card">
+  <div class="toolbar">
+    {% if has_balance %}<label class="check"><input type="checkbox" name="update_balance" value="1" checked> Aggiorna il saldo del conto con l'ultimo saldo del documento</label>{% endif %}
+    <button>Importa {{ result.transactions|length }} movimenti</button>
+  </div>
+  <p class="small muted">Controlla a campione qualche riga confrontandola con il PDF, soprattutto i segni (uscite in negativo). I movimenti già presenti vengono saltati.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Data</th><th>Descrizione</th><th>Controparte</th><th class="num">Importo</th><th class="num">Saldo</th></tr></thead>
+    <tbody>
+    {% for t in result.transactions %}
+      <tr><td style="white-space:nowrap">{{ t.date|d }}</td><td>{{ t.description }}</td><td class="small">{{ t.counterparty }}</td>
+        <td>{{ amount(t.amount_cents) }}</td><td class="num small">{{ t.balance_cents|eur if t.balance_cents is not none }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+</form>
+{% endblock %}

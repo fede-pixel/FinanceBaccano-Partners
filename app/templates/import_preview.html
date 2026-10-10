@@ -14,6 +14,25 @@
   <a href="/movimenti/import?conto={{ account.id }}">← Scegli un altro file</a>
 </div>
 
+{% if is_pdf %}
+<div class="alert {{ 'warn' if not parsed_count or error_count else 'info' }}">
+  {% if ai_enabled %}
+    <form method="post" action="/movimenti/import/{{ token }}/ai?conto={{ account.id }}" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"
+      onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Lettura in corso… (fino a qualche minuto per PDF lunghi)'">
+      <div style="flex:1;min-width:260px">
+        <strong>{{ 'La lettura automatica non ha funzionato bene?' if not parsed_count or error_count else 'Vuoi una lettura più affidabile?' }}</strong>
+        Fai leggere il PDF all'intelligenza artificiale (Claude): interpreta qualsiasi impaginazione, anche le scansioni.
+        <div class="small muted">Il PDF viene inviato al servizio di Anthropic per l'elaborazione. Costo indicativo: pochi centesimi per un estratto di qualche pagina, 1–2 € per estratti molto lunghi (50+ pagine). Prima di salvare vedi l'anteprima.</div>
+      </div>
+      <button>Leggi con l'AI</button>
+    </form>
+  {% else %}
+    <strong>Suggerimento:</strong> se la lettura del PDF non funziona, scarica dall'home banking l'export in CSV o Excel.
+    <span class="small muted">In alternativa si può attivare la lettura dei PDF con l'intelligenza artificiale impostando la variabile <code>ANTHROPIC_API_KEY</code> nel pannello di hosting.</span>
+  {% endif %}
+</div>
+{% endif %}
+
 <form method="post" action="/movimenti/import/{{ token }}?conto={{ account.id }}" id="mapform">
 <div class="card">
   <h2>Collegamento colonne</h2>

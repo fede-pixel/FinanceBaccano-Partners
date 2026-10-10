@@ -21,6 +21,7 @@ def settings_page(request: Request, session: Session = Depends(get_session)):
     return render(
         request, "settings.html", v=values, cats=cats, data_dir=config.DATA_DIR,
         docs_dir=docs_root(session), packages_dir=packages_root(session), backup_dir=config.BACKUP_DIR,
+        ai_enabled=__import__("app.services.ai_extract", fromlist=["is_enabled"]).is_enabled(),
     )
 
 

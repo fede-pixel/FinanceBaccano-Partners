@@ -338,6 +338,7 @@ async def import_preview(token: str, request: Request, conto: int = 0, session: 
     return render(
         request, "import_preview.html", token=token, account=account, rows=rows[:40], header=[h for h in header if h],
         profile=profile, parsed=parsed[:30], parsed_count=len(parsed), errors=errors[:20], error_count=len(errors),
+        is_pdf=token.lower().endswith(".pdf"), ai_enabled=_ai_enabled(),
         total=sum(t.amount_cents for t in parsed),
     )
 
@@ -356,6 +357,71 @@ async def import_confirm(token: str, request: Request, conto: int = 0, session: 
     res = import_transactions(session, account, parsed, batch, update_balance=bool(form.get("update_balance")))
     (config.IMPORTS_DIR / Path(token).name).unlink(missing_ok=True)
     msg = f"Importati {res.inserted} movimenti su '{account.name}'"
+    if res.skipped:
+        msg += f" ({res.skipped} già presenti, saltati)"
+    if res.snapshot:
+        msg += f". Saldo aggiornato al {res.snapshot[0].strftime('%d/%m/%Y')}"
+    return redirect(f"/riconciliazione?batch={batch}", msg=msg)
+
+
+# ---------------- lettura PDF con l'intelligenza artificiale ----------------
+
+def _ai_enabled() -> bool:
+    from app.services import ai_extract
+
+    return ai_extract.is_enabled()
+
+def _ai_path(token: str) -> Path:
+    return config.IMPORTS_DIR / f"{Path(token).name}.ai.json"
+
+
+@router.post("/movimenti/import/{token}/ai")
+def import_ai_run(token: str, conto: int = 0, session: Session = Depends(get_session)):
+    from app.services import ai_extract
+
+    path = config.IMPORTS_DIR / Path(token).name
+    back = f"/movimenti/import/{token}?conto={conto}"
+    if not path.exists():
+        return redirect(f"/movimenti/import?conto={conto}", err="File non più disponibile: ricaricalo")
+    try:
+        result = ai_extract.extract_pdf(path.read_bytes())
+    except (ai_extract.AIUnavailable, ai_extract.AIExtractionError) as exc:
+        return redirect(back, err=str(exc))
+    _ai_path(token).write_text(result.to_json())
+    return redirect(f"/movimenti/import/{token}/ai?conto={conto}")
+
+
+@router.get("/movimenti/import/{token}/ai")
+def import_ai_preview(token: str, request: Request, conto: int = 0, session: Session = Depends(get_session)):
+    from app.services import ai_extract
+
+    account = session.get(Account, conto) or _404()
+    if not _ai_path(token).exists():
+        return redirect(f"/movimenti/import/{token}?conto={conto}", err="Lettura con AI non trovata: riprova")
+    result = ai_extract.AIResult.from_json(_ai_path(token).read_text())
+    iban = result.account_iban.replace(" ", "").upper()
+    return render(
+        request, "import_ai.html", token=token, account=account, result=result,
+        total=sum(t.amount_cents for t in result.transactions), cost=ai_extract.estimated_cost_eur(result),
+        iban_mismatch=bool(iban and account.iban and iban != account.iban),
+        has_balance=any(t.balance_cents is not None for t in result.transactions),
+    )
+
+
+@router.post("/movimenti/import/{token}/ai/conferma")
+async def import_ai_confirm(token: str, request: Request, conto: int = 0, session: Session = Depends(get_session)):
+    from app.services import ai_extract
+
+    account = session.get(Account, conto) or _404()
+    if not _ai_path(token).exists():
+        return redirect(f"/movimenti/import?conto={conto}", err="Lettura con AI non trovata: riprova")
+    form = await request.form()
+    result = ai_extract.AIResult.from_json(_ai_path(token).read_text())
+    batch = new_batch_id("ai-")
+    res = import_transactions(session, account, result.transactions, batch, update_balance=bool(form.get("update_balance")))
+    _ai_path(token).unlink(missing_ok=True)
+    (config.IMPORTS_DIR / Path(token).name).unlink(missing_ok=True)
+    msg = f"Importati {res.inserted} movimenti su '{account.name}' (letti con l'AI)"
     if res.skipped:
         msg += f" ({res.skipped} già presenti, saltati)"
     if res.snapshot:

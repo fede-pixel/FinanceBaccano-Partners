@@ -85,6 +85,14 @@ Pagina **Open Banking (opzionale)**: saldi e movimenti si scaricano da soli (PSD
 
 Se un conto aveva già movimenti importati da file, la sincronizzazione riparte dal giorno successivo all'ultimo movimento: niente doppioni.
 
+## Lettura dei PDF con l'intelligenza artificiale (opzionale)
+
+Quando la lettura automatica di un estratto conto PDF non funziona (impaginazioni particolari, scansioni), l'anteprima dell'import mostra il pulsante **Leggi con l'AI**. Il PDF viene inviato a Claude (Anthropic), che restituisce i movimenti strutturati; tu li controlli in anteprima prima di importarli.
+
+- **Attivazione:** crea una chiave API su [console.anthropic.com](https://console.anthropic.com), poi su Render → servizio → *Environment* aggiungi la variabile `ANTHROPIC_API_KEY`. Il servizio si riavvia da solo.
+- **Costo:** si paga a consumo sul tuo account Anthropic. Con il modello predefinito (Claude Opus 5.5) un estratto di qualche pagina costa pochi centesimi, uno da 50+ pagine 1–2 €. L'anteprima mostra il costo stimato di ogni lettura. Il modello si può cambiare con la variabile `FBP_AI_MODEL`.
+- **Privacy:** il contenuto del PDF viene elaborato dal servizio di Anthropic. Se non imposti la chiave la funzione resta spenta e nessun dato esce dall'app.
+
 ## Analisi spese
 
 Ogni movimento riceve in automatico una categoria (Software e abbonamenti, Carburante e trasporti, Tasse e contributi, Ristoranti e bar…) in base alle parole della descrizione e della controparte. La pagina **Analisi spese** mostra un grafico a barre delle uscite per categoria, con percentuali, dettaglio per fornitore e filtro per periodo e conto. I giroconti tra conti propri e le entrate sono esclusi.

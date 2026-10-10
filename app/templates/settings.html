@@ -15,6 +15,7 @@
     <div class="field"><label>Soglia minima di liquidità (€) – sotto questa il forecast avvisa</label><input name="low_balance_threshold" value="{{ (v.low_balance_threshold|int)|cents_input }}"></div>
     <div class="field"><label>Giorni di pagamento se la fattura non ha scadenza</label><input type="number" name="default_payment_days" value="{{ v.default_payment_days }}"></div>
     <div class="field"><label>Tolleranza giorni per gli abbinamenti</label><input type="number" name="match_tolerance_days" value="{{ v.match_tolerance_days }}"></div>
+    <p class="small">Lettura dei PDF con l'AI: {% if ai_enabled %}<span class="badge good">attiva</span>{% else %}<span class="badge">non attiva</span> <span class="muted">(imposta <code>ANTHROPIC_API_KEY</code> nel pannello di hosting)</span>{% endif %}</p>
     <div class="field"><label class="check"><input type="checkbox" name="include_overdue_in_forecast" value="1" {{ 'checked' if v.include_overdue_in_forecast == '1' }}> Conta nel saldo previsto di oggi le voci scadute non ancora abbinate</label></div>
   </div>
   <div class="card">

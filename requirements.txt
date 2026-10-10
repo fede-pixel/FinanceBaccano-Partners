@@ -10,3 +10,4 @@ httpx==0.28.1
 PyJWT==2.15.1
 cryptography==50.0.2
 pdfplumber==0.11.10
+anthropic==1.13.0
