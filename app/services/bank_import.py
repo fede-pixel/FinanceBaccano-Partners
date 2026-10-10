@@ -179,14 +179,32 @@ def _pdf_lines(page) -> list[list[dict]]:
     return [sorted(ln, key=lambda w: w["x0"]) for ln in lines]
 
 
+# parole con cui comincia sempre una nuova colonna, anche se stampate vicinissime alla precedente
+_COLUMN_START = {
+    "data", "date", "datum", "importo", "importi", "amount", "betrag", "causale", "descrizione", "description",
+    "dettagli", "dare", "avere", "saldo", "balance", "entrate", "uscite", "addebiti", "accrediti", "tipo", "type",
+    "divisa", "valuta", "controparte", "beneficiario", "riferimento", "money", "soldi",
+}
+
+
 def _header_columns(line: list[dict]) -> list[tuple[float, float, str]]:
-    """Unisce le parole vicine dell'intestazione in colonne: (x0, x1, nome)."""
+    """Unisce le parole vicine dell'intestazione in colonne: (x0, x1, nome).
+    Due parole restano nella stessa colonna solo se separate da un normale spazio (in proporzione al corpo
+    del carattere) e se la seconda non è un nome tipico di colonna ("Data valuta" sì, "valuta Importo" no)."""
     cols: list[list] = []
+    prev_word = ""
     for w in line:
-        if cols and w["x0"] - cols[-1][1] < 6:
+        height = (w["bottom"] - w["top"]) or 8
+        gap = w["x0"] - cols[-1][1] if cols else None
+        word = w["text"].lower().strip(":.")
+        same_cell = gap is not None and gap < max(2.0, 0.45 * height)
+        # "valuta" dopo "data" è "Data valuta"; altrove è l'inizio di una colonna (es. la divisa)
+        starts_column = word in _COLUMN_START and not (word == "valuta" and prev_word == "data")
+        if same_cell and not starts_column:
             cols[-1][1], cols[-1][2] = w["x1"], cols[-1][2] + " " + w["text"]
         else:
             cols.append([w["x0"], w["x1"], w["text"]])
+        prev_word = word
     return [tuple(c) for c in cols]
 
 
@@ -217,26 +235,52 @@ def _assign(line: list[dict], cols: list[tuple[float, float, str]]) -> list[str]
     return cells
 
 
+def _merge_header_above(cols: list[tuple[float, float, str]], above: list[dict]) -> list[tuple[float, float, str]]:
+    """Intestazione su due righe vicine (es. "Data" stampata più in alto, o "Data / contabile"):
+    le parole della riga sopra diventano colonne nuove o completano il nome di quelle sotto."""
+    cols = [list(c) for c in cols]
+    for w in above:
+        overlap = [c for c in cols if w["x0"] < c[1] + 2 and w["x1"] > c[0] - 2]
+        if overlap:
+            overlap[0][2] = f'{w["text"]} {overlap[0][2]}'
+            overlap[0][0], overlap[0][1] = min(overlap[0][0], w["x0"]), max(overlap[0][1], w["x1"])
+        else:
+            cols.append([w["x0"], w["x1"], w["text"]])
+    return [tuple(c) for c in sorted(cols, key=lambda c: c[0])]
+
+
+def _date_index(cols: list[tuple[float, float, str]]) -> int:
+    return next((i for i, c in enumerate(cols) if _HEADER_HINT.search(c[2])), 0)
+
+
 def _pdf_by_position(pdf) -> list[list[str]]:
     """Ricostruisce la tabella dalle posizioni delle parole, usando le colonne dell'intestazione."""
     out: list[list[str]] = []
     cols = None
+    date_idx = 0
     for page in pdf.pages:
         last_top = None
+        prev_line = None
         for line in _pdf_lines(page):
             text = " ".join(w["text"] for w in line)
             if len(line) >= 3 and _HEADER_HINT.search(text) and not _starts_with_date(text):
                 new_cols = _header_columns(line)
                 if len(new_cols) >= 3:
+                    if (prev_line and len(prev_line) <= 4 and 0 < line[0]["top"] - prev_line[0]["top"] <= 14
+                            and not any(re.search(r"\d", w["text"]) for w in prev_line)):
+                        new_cols = _merge_header_above(new_cols, prev_line)
                     if cols is None:
                         out.append([c[2] for c in new_cols])
                     cols = new_cols
+                    date_idx = _date_index(cols)
+                    prev_line = line
                     continue
+            prev_line = line
             if cols is None:
                 continue
             cells = _assign(line, cols)
             top = line[0]["top"]
-            if _starts_with_date(cells[0]) or (len(cells) > 1 and _starts_with_date(cells[1])) or len(out) == 1:
+            if _starts_with_date(cells[date_idx]) or _starts_with_date(cells[0]) or len(out) == 1:
                 out.append(cells)
                 last_top = top
             elif last_top is not None and 0 < top - last_top <= 24:
@@ -244,8 +288,8 @@ def _pdf_by_position(pdf) -> list[list[str]]:
                 # accodo solo testo, mai nella colonna della data; piè di pagina e note lontane vengono ignorati
                 # e importi stampati un po' più in basso della data (centrati su righe alte): riempiono le celle vuote
                 prev = out[-1]
-                for i, c in enumerate(cells[1:], start=1):
-                    if not c:
+                for i, c in enumerate(cells):
+                    if not c or i in (0, date_idx):
                         continue
                     if _looks_like_amount(c):
                         if not prev[i]:
@@ -257,7 +301,7 @@ def _pdf_by_position(pdf) -> list[list[str]]:
 
 
 def _date_rows(rows: list[list[str]]) -> int:
-    return sum(1 for r in rows if any(_starts_with_date(c) for c in r[:2]))
+    return sum(1 for r in rows if any(_starts_with_date(c) for c in r[:4]))
 
 
 def _read_pdf(content: bytes) -> list[list[str]]:
@@ -356,7 +400,7 @@ def _read_table(content: bytes, filename: str) -> list[list[str]]:
 # ---------- euristiche ----------
 
 _KEYWORDS = {
-    "date_col": ["data contabile", "data operazione", "date completed", "completed date", "data valuta", "data", "date"],
+    "date_col": ["data contabile", "data operazione", "date completed", "completed date", "data", "date", "data transazione", "data valuta"],
     "amount_col": ["importo", "total amount", "amount", "importo (eur)", "importo eur"],
     "in_col": ["avere", "entrate", "accrediti", "money in", "credit", "soldi in entrata", "in entrata", "entrata", "eingang", "gutschrift"],
     "out_col": ["dare", "uscite", "addebiti", "money out", "debit", "soldi in uscita", "in uscita", "uscita", "ausgang", "lastschrift"],

@@ -243,3 +243,48 @@ def test_scalare_document_is_recognized(client):
     csv = "Valuta;Saldo per valuta;gg;Numeri Creditori\n17/04/26;15.983,80 A;10;159.838,00\n".encode()
     r = client.post("/movimenti/import", data={"account_id": "1"}, files={"file": ("scalare.csv", csv)})
     assert "riassunto scalare" in r.text
+
+
+def test_bcc_movimenti_globali_layout():
+    """Lista "Movimenti Globali" BCC: ogni riga ha intestatario e rapporto prima della data,
+    la parola "Data" dell'intestazione è più in alto delle altre e le intestazioni sono vicinissime."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    c.setFont("Helvetica", 8)
+    c.drawString(40, 800, "Banca di Credito Cooperativo di Roma")
+    c.drawString(40, 790, "AG. 139 VIA SALARIA 110 MONTEROTONDO 00015 - RM")
+    c.drawString(40, 780, "Movimenti Globali")
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(215, 756, "Data")                 # più in alto: finisce su una riga a sé
+    for x, h in [(40, "Intestatario"), (150, "Rapporto"), (262, "Data valuta"), (366, "Causale"), (400, "Descrizione")]:
+        c.drawString(x, 748, h)
+    c.drawRightString(360, 748, "Importo")
+    c.setFont("Helvetica", 8)
+    rows = [("BACCANO PARTNERS SRL", "000000003415", "03/06/2026", "03/06/2026", "-1.250,00", "26", "BONIFICO A FAVORE DI FORNITORE SRL"),
+            ("BACCANO PARTNERS SRL", "000000003415", "05/06/2026", "04/06/2026", "3.000,50", "48", "BONIFICO DA CLIENTE ROSSI")]
+    y = 735
+    for intest, rapp, d, dv, imp, caus, desc in rows:
+        c.drawString(40, y, intest)
+        c.drawString(150, y, rapp)
+        c.drawString(215, y, d)
+        c.drawString(262, y, dv)
+        c.drawRightString(360, y, imp)
+        c.drawString(366, y, caus)
+        c.drawString(400, y, desc)
+        y -= 12
+    c.save()
+    out = read_table(buf.getvalue(), "movimenti_globali.pdf")
+    assert out[0] == ["Intestatario", "Rapporto", "Data", "Data valuta", "Importo", "Causale", "Descrizione"], out[:3]
+    p = guess_profile(out)
+    assert p.date_col == "Data" and p.amount_col == "Importo", p
+    txs, errors = parse_rows(out, p)
+    assert [(t.date.day, t.amount_cents) for t in txs] == [(3, -125000), (5, 300050)] and not errors, (out, errors)
+
+
+def test_tight_header_words_split_into_columns():
+    from app.services.bank_import import _header_columns
+
+    def w(text, x0, x1):
+        return {"text": text, "x0": x0, "x1": x1, "top": 100, "bottom": 108}
+    cols = _header_columns([w("Data", 40, 58), w("valuta", 60.5, 85), w("Importo", 87.5, 115), w("Causale", 118, 146), w("Descrizione", 148, 190)])
+    assert [c[2] for c in cols] == ["Data valuta", "Importo", "Causale", "Descrizione"]
