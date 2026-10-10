@@ -4,6 +4,7 @@ from datetime import date, timedelta
 
 from app.models import Account, BalanceSnapshot, Invoice, PlannedItem, Transaction
 from app.services import assistant, investment, kpi
+from app.services.util import set_setting
 
 TODAY = date(2026, 10, 10)
 
@@ -153,3 +154,26 @@ def test_vat_position_with_carry_forward(session):
     feb = monthly.periods[1]
     assert feb.to_pay == 1_000_000 and feb.due == date(2026, 3, 16)
     assert len(monthly.periods) == 10
+
+
+def test_profit_plan_from_expected_inflows(session):
+    from app.models import Contract
+    from app.services import contracts
+
+    c = Contract(client="Luongo", total_taxable_cents=14_000_000, vat_included=True, as_of=date(2026, 10, 10),
+                 end_date=date(2027, 2, 28))
+    session.add(c)
+    session.flush()
+    contracts.sync_contract(session, c, today=date(2026, 10, 10))
+    session.add(PlannedItem(title="Scaduta", amount_cents=1_000_000, due_date=date(2026, 9, 1)))
+    session.commit()
+    pp = investment.profit_plan(session, "base", date(2026, 10, 10))
+    assert pp.overdue == 800_000  # scaduti all'80% nello scenario base
+    assert pp.inflow == 14_000_000 + 800_000
+    assert pp.costs == round(pp.inflow * 0.7) and pp.profit == pp.inflow - pp.costs
+    assert pp.investable == pp.profit and abs(sum(a.amount for a in pp.allocations) - pp.investable) <= 4
+    assert pp.months[-1].cumulative == pp.profit and pp.last_month == "2027-03"
+    set_setting(session, "inv_tax_reserve", "25")
+    session.commit()
+    pp2 = investment.profit_plan(session, "base", date(2026, 10, 10))
+    assert pp2.taxes == round(pp2.profit * 0.25) and pp2.investable == pp2.profit - pp2.taxes

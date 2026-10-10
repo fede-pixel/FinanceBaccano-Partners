@@ -36,7 +36,9 @@ AREAS = [
     ("altro", "Altro / riserva aggiuntiva"),
 ]
 DEFAULTS = {"inv_marketing": "25", "inv_hr": "35", "inv_mezzi": "25", "inv_altro": "15",
-            "inv_reserve_months": "2", "inv_hire_cost": "3000"}
+            "inv_reserve_months": "2", "inv_hire_cost": "3000",
+            "inv_cost_ratio": "70",  # costi stimati in % degli incassi previsti
+            "inv_tax_reserve": "0"}  # quota dell'utile accantonata per le imposte
 
 
 def settings(session: Session) -> dict[str, float]:
@@ -237,3 +239,109 @@ def build(session: Session, horizon_months: int = 6, scenario: str = "base", tod
 
 def data_freshness(session: Session) -> date | None:
     return session.scalar(select(func.max(Transaction.date)))
+
+
+# ---------- metodo principale: utile atteso sugli incassi previsti ----------
+
+@dataclass
+class ProfitMonth:
+    key: str  # YYYY-MM
+    inflow: int
+    costs: int
+    profit: int
+    cumulative: int = 0
+
+
+@dataclass
+class ProfitPlan:
+    scenario: str
+    cost_ratio: float  # 0.70
+    tax_ratio: float
+    months: list[ProfitMonth]
+    overdue: int  # incassi scaduti attesi (pesati dallo scenario), contati nel mese corrente
+    overdue_raw: int
+    inflow: int
+    costs: int
+    profit: int
+    taxes: int
+    investable: int
+    allocations: list[Allocation] = field(default_factory=list)
+    hire_monthly_budget: int = 0
+    hires: float = 0.0
+    cash: Plan | None = None  # controllo di liquidità sullo stesso periodo
+    actual_cost_ratio: float | None = None  # costi / ricavi dell'anno in corso (dalle fatture), per confronto
+    warnings: list[str] = field(default_factory=list)
+
+    @property
+    def last_month(self) -> str:
+        return self.months[-1].key if self.months else ""
+
+
+def profit_plan(session: Session, scenario: str = "base", today: date | None = None) -> ProfitPlan:
+    """Incassi previsti (fatture emesse, contratti, ricorrenze, altre voci) dal mese corrente all'ultimo incasso
+    previsto dei contratti; costi = una percentuale fissa degli incassi; quello che resta è l'utile da investire,
+    diviso tra le aree. Il controllo di cassa dice quanto si può spendere subito senza scendere sotto la riserva."""
+    from app.services import inflows
+
+    today = today or date.today()
+    sc = SCENARIOS.get(scenario, SCENARIOS["base"])
+    cfg = settings(session)
+    cost_ratio = min(max(cfg["inv_cost_ratio"], 0), 100) / 100
+    tax_ratio = min(max(cfg["inv_tax_reserve"], 0), 100) / 100
+    fl = inflows.monthly(session, today)
+    overdue = round(fl.overdue * sc["overdue_in"])
+    months, run = [], 0
+    for i, m in enumerate(fl.months):
+        inflow = round(m.total * sc["future_in"]) + (overdue if i == 0 else 0)
+        costs = round(inflow * cost_ratio)
+        run += inflow - costs
+        months.append(ProfitMonth(m.key, inflow, costs, inflow - costs, run))
+    inflow = sum(m.inflow for m in months)
+    costs = sum(m.costs for m in months)
+    profit = inflow - costs
+    taxes = round(max(profit, 0) * tax_ratio)
+    investable = max(0, profit - taxes)
+    total_share = sum(cfg[f"inv_{k}"] for k, _ in AREAS) or 100
+    allocations = [Allocation(k, label, cfg[f"inv_{k}"] / total_share, int(investable * cfg[f"inv_{k}"] / total_share))
+                   for k, label in AREAS]
+    n = max(1, len(months))
+    cash = build(session, min(12, max(3, n)), scenario, today)
+    plan = ProfitPlan(scenario, cost_ratio, tax_ratio, months, overdue, fl.overdue, inflow, costs, profit, taxes, investable,
+                      allocations, cash=cash)
+    from app.services import kpi
+
+    rep = kpi.build(session, 12, today)
+    if rep.ytd_margin is not None:
+        plan.actual_cost_ratio = 1 - rep.ytd_margin
+    fmt = lambda c: f"{c / 100:,.0f} €".replace(",", ".")  # noqa: E731
+    hr = next(a for a in allocations if a.key == "hr")
+    plan.hire_monthly_budget = hr.amount // max(12, n)  # un'assunzione dura: il budget va spalmato su almeno un anno
+    hire_cost = int(cfg["inv_hire_cost"] * 100)
+    plan.hires = plan.hire_monthly_budget / hire_cost if hire_cost else 0
+    for a in allocations:
+        if a.key == "marketing":
+            a.note = f"circa {fmt(a.amount // n)} al mese per {n} mesi, man mano che arrivano gli incassi"
+        elif a.key == "hr":
+            a.note = (f"circa {fmt(plan.hire_monthly_budget)} al mese di costo aziendale, spalmato su {max(12, n)} mesi: "
+                      "un'assunzione resta anche quando questi incassi sono finiti")
+        elif a.key == "mezzi":
+            now = min(a.amount, cash.investable_now)
+            a.note = (f"subito fino a circa {fmt(now)} (liquidità sopra la riserva); il resto quando arrivano gli incassi "
+                      "o con leasing/noleggio")
+        else:
+            a.note = "margine per imprevisti, ritardi negli incassi o altre opportunità"
+    if not fl.total and not fl.overdue:
+        plan.warnings.append("Non ci sono incassi previsti: carica fatture emesse, contratti e ricorrenze.")
+    if cash.min_balance < cash.reserve:
+        plan.warnings.append(
+            f"Controllo di cassa: il {cash.min_date:%d/%m/%Y} la liquidità prevista scende a {fmt(cash.min_balance)}, sotto la "
+            f"riserva di {fmt(cash.reserve)}. L'utile c'è, ma arriva più tardi delle uscite: investi solo dopo gli incassi.")
+    if plan.actual_cost_ratio is not None and plan.actual_cost_ratio > cost_ratio + 0.05:
+        plan.warnings.append(
+            f"Quest'anno i costi (fornitori, autofatture, personale) sono stati il {plan.actual_cost_ratio * 100:.0f}% dei ricavi, "
+            f"non il {cost_ratio * 100:.0f}%: con il margine attuale l'utile atteso sarebbe circa "
+            f"{fmt(round(inflow * max(0.0, 1 - plan.actual_cost_ratio)))} invece di {fmt(profit)}.")
+    if tax_ratio == 0 and profit > 0:
+        plan.warnings.append("Nessun accantonamento per le imposte: su questo utile pagherai IRES e IRAP (spesso il 25-30%). "
+                             "Imposta la quota nelle impostazioni per non investire soldi che serviranno per le tasse.")
+    return plan

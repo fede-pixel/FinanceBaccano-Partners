@@ -418,7 +418,21 @@ def tool_investimenti(session: Session, mesi: int, scenario: str) -> dict:
     from app.services import investment
 
     p = investment.build(session, mesi if mesi in (3, 6, 12) else 6, scenario)
+    pp = investment.profit_plan(session, scenario)
     return {
+        "metodo_principale": {
+            "nota": "Incassi previsti (fatture, contratti, ricorrenze) meno una % fissa di costi = utile da investire. "
+                    "Usa questi numeri per dire quanto investire; il controllo di cassa sotto dice quando.",
+            "incassi_previsti": _eur(pp.inflow), "fino_al_mese": pp.last_month, "costi_percentuale": f"{pp.cost_ratio * 100:.0f}%",
+            "costi_stimati": _eur(pp.costs), "utile_atteso": _eur(pp.profit), "accantonamento_imposte": _eur(pp.taxes),
+            "da_investire": _eur(pp.investable),
+            "costi_su_ricavi_reali_anno": None if pp.actual_cost_ratio is None else f"{pp.actual_cost_ratio * 100:.0f}%",
+            "ripartizione": [{"area": a.label, "quota": f"{a.share * 100:.0f}%", "budget": _eur(a.amount), "nota": a.note}
+                             for a in pp.allocations],
+            "mesi": [{"mese": m.key, "incassi": _eur(m.inflow), "utile": _eur(m.profit)} for m in pp.months],
+            "avvisi": pp.warnings,
+        },
+        "controllo_di_cassa": "i campi seguenti",
         "investibile_nell_orizzonte_graduale": _eur(p.investable), "di_cui_spendibile_subito": _eur(p.investable_now),
         "liquidita_oggi": _eur(p.balance_today), "punto_minimo": _eur(p.min_balance), "data_minimo": p.min_date.isoformat(),
         "riserva_sicurezza": _eur(p.reserve), "incassi_medi_mensili_storici": _eur(p.hist_in),

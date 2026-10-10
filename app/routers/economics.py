@@ -64,7 +64,15 @@ def kpi_page(request: Request, mesi: int = 12, iva: str = "", provvisorio: str =
 def investment_page(request: Request, mesi: int = 6, scenario: str = "base", session: Session = Depends(get_session)):
     mesi = mesi if mesi in (3, 6, 12) else 6
     scenario = scenario if scenario in investment.SCENARIOS else "base"
-    plan = investment.build(session, mesi, scenario)
+    pp = investment.profit_plan(session, scenario)
+    plan = pp.cash
+    chart_profit = {
+        "kind": "bar", "labelFormat": "month", "labels": [m.key for m in pp.months], "stacked": True,
+        "title": "Incassi previsti: costi e utile", "series": [
+            {"label": f"Costi stimati ({pp.cost_ratio * 100:.0f}%)", "values": [m.costs / 100 for m in pp.months],
+             "color": "--series-forecast", "stack": "in"},
+            {"label": "Utile da investire", "values": [m.profit / 100 for m in pp.months], "color": "--series-actual", "stack": "in"}],
+    }
     chart_days = {
         "kind": "line", "labelFormat": "day", "labels": [d.date.isoformat() for d in plan.days],
         "title": "Liquidità prevista", "series": [{"label": "Liquidità prevista", "values": [d.balance / 100 for d in plan.days],
@@ -77,13 +85,13 @@ def investment_page(request: Request, mesi: int = 6, scenario: str = "base", ses
                    {"label": "Uscite previste", "values": [o / 100 for _, _, o in plan.months], "color": "--series-forecast"}],
     }
     chart_alloc = {
-        "kind": "bar", "horizontal": True, "labels": [a.label for a in plan.allocations], "title": "Ripartizione",
-        "series": [{"label": "Budget", "values": [a.amount / 100 for a in plan.allocations], "color": "--series-actual"}],
+        "kind": "bar", "horizontal": True, "labels": [a.label for a in pp.allocations], "title": "Ripartizione",
+        "series": [{"label": "Budget", "values": [a.amount / 100 for a in pp.allocations], "color": "--series-actual"}],
     }
     return render(
-        request, "investment.html", plan=plan, mesi=mesi, scenario=scenario, scenarios=investment.SCENARIOS,
+        request, "investment.html", pp=pp, plan=plan, mesi=mesi, scenario=scenario, scenarios=investment.SCENARIOS,
         cfg=investment.settings(session), areas=investment.AREAS,
-        chart_days=chart_days, chart_months=chart_months, chart_alloc=chart_alloc,
+        chart_days=chart_days, chart_months=chart_months, chart_alloc=chart_alloc, chart_profit=chart_profit,
     )
 
 
