@@ -273,3 +273,16 @@ class Setting(Base):
 
     key: Mapped[str] = mapped_column(String(60), primary_key=True)
     value: Mapped[str] = mapped_column(Text, default="")
+
+
+class ChatConversation(Base):
+    """Conversazione con l'assistente (messaggi in formato API per riprendere il filo, e testo da mostrare)."""
+
+    __tablename__ = "chat_conversations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    api_messages: Mapped[str] = mapped_column(Text, default="[]")
+    display: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal, init_engine
 from app.models import Transaction
-from app.routers import accounts, admin, analysis, banks, dashboard, invoice_status, planning, settings, upload
+from app.routers import accounts, admin, analysis, assistant, banks, dashboard, invoice_status, planning, settings, upload
 from app.services.admin_docs import ensure_checklist, seed_categories
 from app.services.recurrence import sync_all
 
@@ -140,7 +140,7 @@ def create_app() -> FastAPI:
                 return PlainTextResponse("Richiesta bloccata: origine non locale", status_code=403)
         return await call_next(request)
 
-    for r in (auth, dashboard, upload, accounts, analysis, banks, invoice_status, planning, admin, settings):
+    for r in (auth, dashboard, upload, accounts, analysis, assistant, banks, invoice_status, planning, admin, settings):
         app.include_router(r.router)
     return app
 

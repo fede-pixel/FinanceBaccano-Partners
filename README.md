@@ -120,6 +120,17 @@ Le banche spesso troncano il nome del beneficiario ("RENOVATIO SNC DI B"): per l
 
 Ogni vista si scarica in Excel. "Segna pagata" serve per i pagamenti da conti non caricati in app.
 
+## Assistente AI
+
+La pagina **Assistente AI** è una chat con Claude che conosce i dati dell'app: saldi, liquidità prevista, fatture da pagare e da incassare, spese per categoria, scadenze per il commercialista. Risponde a domande libere ("chi ci deve pagare?", "dove spendiamo di più?", "riusciamo a pagare gli F24 del 16?") e dà consigli basati sui numeri.
+
+- **Come legge i dati:** a ogni domanda Claude sceglie quali dati gli servono e li legge con strumenti in **sola lettura**: panoramica, fatture, analisi spese, previsione di liquidità, scadenze documenti e una query SQL di sola lettura. Non può modificare nulla. Le impostazioni e le connessioni bancarie (chiavi e token) non sono mai leggibili.
+- **Attivazione:** la stessa variabile `ANTHROPIC_API_KEY` della lettura dei PDF.
+- **Costo:** a consumo; sotto ogni risposta c'è il costo stimato (di solito pochi centesimi).
+- **Privacy:** le domande e i dati letti per rispondere vengono elaborati dal servizio di Anthropic.
+
+Le conversazioni restano salvate e si possono riprendere o eliminare.
+
 ## Analisi spese
 
 Ogni movimento riceve in automatico una categoria (Software e abbonamenti, Carburante e trasporti, Tasse e contributi, Ristoranti e bar…) in base alle parole della descrizione e della controparte. La pagina **Analisi spese** mostra un grafico a barre delle uscite per categoria, con percentuali, dettaglio per fornitore e filtro per periodo e conto. I giroconti tra conti propri e le entrate sono esclusi.

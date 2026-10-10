@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Assistente AI{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Assistente AI</h1>
+  <div class="muted">Fai domande su conti, liquidità, fatture, spese e scadenze: l'assistente legge i dati dell'app e risponde con numeri e consigli.</div></div>
+  {% if conv %}<a class="btn btn-ghost" href="/assistente">+ Nuova conversazione</a>{% endif %}
+</div>
+
+{% if not ai_enabled %}
+<div class="alert warn">
+  <strong>Assistente non attivo.</strong> Per usarlo imposta la variabile <code>ANTHROPIC_API_KEY</code> nel pannello di hosting (Render → servizio → Environment), la stessa usata per la lettura dei PDF. Non incollare mai la chiave in una chat.
+</div>
+{% endif %}
+
+<div class="chat-layout">
+  <aside class="card chat-list small">
+    <h3>Conversazioni</h3>
+    {% for cv in conversations %}
+      <div class="chat-list-item {{ 'active' if conv and cv.id == conv.id }}">
+        <a href="/assistente?c={{ cv.id }}">{{ cv.title or 'Senza titolo' }}</a>
+        <div class="muted">{{ cv.updated_at.strftime('%d/%m %H:%M') }}</div>
+      </div>
+    {% else %}
+      <p class="muted">Nessuna conversazione.</p>
+    {% endfor %}
+  </aside>
+
+  <section class="card chat-main">
+    {% if messages %}
+    <div class="chat-thread">
+      {% for m in messages %}
+        <div class="chat-msg {{ m.role }}" {% if loop.last %}id="ultima"{% endif %}>
+          {% if m.role == 'user' %}
+            <div class="chat-bubble">{{ m.text }}</div>
+          {% else %}
+            <div class="chat-bubble md">{{ m.text|md }}</div>
+            <div class="small muted chat-meta">
+              {% if m.tools %}Dati consultati: {{ m.tools|join(', ') }}{% endif %}
+              {% if m.cost_eur is not none %} · costo stimato {{ '%.3f'|format(m.cost_eur)|replace('.', ',') }} €{% endif %}
+            </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="chat-empty">
+      <p class="muted">Esempi di domande:</p>
+      <div class="chat-examples">
+        {% for e in examples %}<button type="button" class="ghost small" onclick="const t=document.getElementById('question');t.value=this.textContent;t.focus()">{{ e }}</button>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <form method="post" action="/assistente/chiedi" class="chat-form"
+      onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Sto analizzando i dati…';document.getElementById('question').readOnly=true">
+      <input type="hidden" name="conv_id" value="{{ conv.id if conv else 0 }}">
+      <textarea id="question" name="question" rows="3" required placeholder="Scrivi una domanda… (Invio per inviare, Maiusc+Invio per andare a capo)"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit()}" {{ 'disabled' if not ai_enabled }}></textarea>
+      <div class="toolbar">
+        <button {{ 'disabled' if not ai_enabled }}>Chiedi</button>
+        <span class="small muted">La risposta può richiedere fino a un minuto. Le domande e i dati letti dall'assistente vengono elaborati dal servizio di Anthropic (Claude); i dati restano in sola lettura, l'assistente non modifica nulla.</span>
+      </div>
+    </form>
+    {% if conv %}
+    <form method="post" action="/assistente/{{ conv.id }}/elimina" data-confirm="Eliminare questa conversazione?" style="margin-top:8px">
+      <button class="small ghost">Elimina conversazione</button></form>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
