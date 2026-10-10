@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.models import Account, BalanceSnapshot, BankConnection, Transaction
-from app.services.bank_import import ParsedTx, import_transactions
+from app.services.bank_import import ParsedTx, import_transactions, new_batch_id
 from app.services.enablebanking import (
     EBConfig,
     EnableBankingClient,
@@ -101,7 +101,7 @@ def sync_account(session: Session, client: EnableBankingClient, account: Account
     start = sync_start_date(session, account, today)
     raw = client.transactions(account.external_uid, start) if start <= today else []
     parsed = [p for p in (to_parsed(t, i) for i, t in enumerate(raw)) if p]
-    batch = "api-" + datetime.now().strftime("%Y%m%d%H%M%S")
+    batch = new_batch_id("api-")
     res = import_transactions(session, account, parsed, batch, update_balance=False, source="api")
     bal = pick_balance(client.balances(account.external_uid))
     if bal:

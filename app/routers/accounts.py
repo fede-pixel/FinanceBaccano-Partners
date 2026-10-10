@@ -1,6 +1,6 @@
 import hashlib
 import uuid
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app import config
 from app.db import get_session
 from app.models import ACCOUNT_KINDS, Account, BalanceSnapshot, Transaction
-from app.services.bank_import import ImportProfile, guess_profile, import_transactions, parse_rows, read_table
+from app.services.bank_import import ImportProfile, guess_profile, import_transactions, new_batch_id, parse_rows, read_table
 from app.services.forecast import account_statuses
 from app.services.util import month_bounds, parse_amount, parse_date
 from app.web import redirect, render
@@ -291,7 +291,7 @@ async def import_confirm(token: str, request: Request, conto: int = 0, session: 
     if not parsed:
         return redirect(f"/movimenti/import/{token}?conto={conto}", err="Nessun movimento valido da importare")
     account.csv_profile = profile.to_json()
-    batch = datetime.now().strftime("%Y%m%d%H%M%S")
+    batch = new_batch_id()
     res = import_transactions(session, account, parsed, batch, update_balance=bool(form.get("update_balance")))
     (config.IMPORTS_DIR / Path(token).name).unlink(missing_ok=True)
     msg = f"Importati {res.inserted} movimenti su '{account.name}'"

@@ -150,7 +150,7 @@ class Invoice(Base):
     file_hash: Mapped[str] = mapped_column(String(64), unique=True)
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
-    planned_items: Mapped[list["PlannedItem"]] = relationship(back_populates="invoice")
+    planned_items: Mapped[list["PlannedItem"]] = relationship(back_populates="invoice", cascade="all, delete-orphan")
 
 
 class PlannedItem(Base):

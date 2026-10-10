@@ -198,6 +198,9 @@ def import_invoices(
             except Exception as exc:  # file malformato: lo segnalo e proseguo con gli altri
                 res.errors.append(f"{name}: {exc}")
                 continue
+            if not parsed_list:
+                res.errors.append(f"{name}: non è una fattura elettronica (FatturaPA)")
+                continue
             for i, inv in enumerate(parsed_list):
                 if forced_direction in ("attiva", "passiva"):
                     direction = forced_direction

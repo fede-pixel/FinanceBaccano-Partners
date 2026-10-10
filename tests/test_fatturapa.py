@@ -96,3 +96,8 @@ def test_zip_and_paid_before(session):
     statuses = sorted((i.due_date, i.status) for inv in res.imported for i in inv.planned_items)
     assert statuses[0] == (date(2026, 10, 31), "pagato")
     assert statuses[-1] == (date(2026, 11, 30), "previsto")
+
+
+def test_non_invoice_xml_is_reported(session):
+    res = import_invoices(session, [("altro.xml", b"<?xml version='1.0'?><ordine/>")], company_vat="09876543210")
+    assert not res.imported and res.errors == ["altro.xml: non è una fattura elettronica (FatturaPA)"]

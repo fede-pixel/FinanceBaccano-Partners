@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app import config
 from app.models import Account, ChecklistItem, DocCategory
 from app.services import admin_docs as ad
-from app.services.bank_import import ImportProfile, import_transactions, parse_rows, read_table
+from app.services.bank_import import ImportProfile, import_transactions, new_batch_id, parse_rows, read_table
 from app.services.fatturapa import import_invoices
 from app.services.util import get_setting
 
@@ -227,7 +227,6 @@ def process_batch(session: Session, batch: Batch) -> BatchResult:
 
     res = BatchResult()
     invoice_files = []
-    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
     for item in batch.items:
         path = file_path(item)
         if item.kind == "ignora" or not path.exists():
@@ -247,7 +246,7 @@ def process_batch(session: Session, batch: Batch) -> BatchResult:
                 res.errors.append(f"{item.name}: nessun movimento riconosciuto con la mappatura di '{account.name}'")
                 res.pending.append(item)
                 continue
-            r = import_transactions(session, account, txs, f"{stamp}-{account.id}", update_balance=bool(profile.balance_col))
+            r = import_transactions(session, account, txs, new_batch_id(), update_balance=bool(profile.balance_col))
             res.movements += r.inserted
             res.lines.append(f"{account.name}: {r.inserted} nuovi movimenti" + (f", {r.skipped} già presenti" if r.skipped else ""))
             if errors:

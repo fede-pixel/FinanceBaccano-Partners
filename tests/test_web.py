@@ -55,3 +55,36 @@ def test_end_to_end_flow(client):
 def test_cross_origin_post_blocked(client):
     r = client.post("/impostazioni", data={"company_name": "x"}, headers={"Origin": "https://evil.example"})
     assert r.status_code == 403
+
+
+def test_undo_import_only_removes_its_own_batch(client):
+    from app.db import SessionLocal
+    from app.models import Transaction
+
+    client.post("/conti/salva", data={"name": "A", "opening_balance": "0"})
+    client.post("/conti/salva", data={"name": "B", "opening_balance": "0"})
+    for acc in ("1", "2"):
+        r = client.post("/movimenti/import", data={"account_id": acc},
+                        files={"file": ("m.csv", b"Data;Descrizione;Importo\n01/09/2026;X;-1\n")}, follow_redirects=False)
+        token = r.headers["location"].split("/movimenti/import/")[1].split("?")[0]
+        client.post(f"/movimenti/import/{token}/conferma?conto={acc}",
+                    data={"header_row": "0", "date_col": "Data", "amount_col": "Importo", "desc_cols": "Descrizione"})
+    with SessionLocal() as s:
+        batches = [t.import_batch for t in s.query(Transaction).order_by(Transaction.account_id)]
+    assert len(set(batches)) == 2  # anche se fatti nello stesso secondo
+    client.post(f"/movimenti/import/{batches[0]}/annulla")
+    with SessionLocal() as s:
+        assert [t.account_id for t in s.query(Transaction)] == [2]
+
+
+def test_delete_invoice_removes_its_due_dates(client):
+    from app.db import SessionLocal
+    from app.models import PlannedItem
+
+    client.post("/impostazioni", data={"company_vat": "IT09876543210", "low_balance_threshold": "0"})
+    client.post("/fatture/import", files=[("files", ("a.xml", make_xml()))], data={"direction": "auto"})
+    with SessionLocal() as s:
+        assert s.query(PlannedItem).count() == 2
+    client.post("/fatture/1/elimina")
+    with SessionLocal() as s:
+        assert s.query(PlannedItem).count() == 0

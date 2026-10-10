@@ -249,6 +249,13 @@ def parse_rows(rows: list[list[str]], p: ImportProfile) -> tuple[list[ParsedTx],
     return out, errors
 
 
+def new_batch_id(prefix: str = "") -> str:
+    """Identificativo univoco di un import (serve ad annullarlo senza toccare altri import)."""
+    import uuid
+
+    return f"{prefix}{datetime.now():%Y%m%d%H%M%S}-{uuid.uuid4().hex[:6]}"
+
+
 def dedupe_keys(txs: list[ParsedTx]) -> list[str]:
     """Chiave stabile per riconoscere un movimento già importato anche se il file viene ricaricato."""
     seen: dict[str, int] = {}

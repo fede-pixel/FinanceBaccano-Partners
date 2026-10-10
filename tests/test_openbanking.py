@@ -125,7 +125,7 @@ def test_full_flow_from_ui(client, fake, tmp_path):
     assert fake_eb.auth_body["redirect_url"].endswith("/banche/callback")
     state = fake_eb.auth_body["state"]
 
-    r = client.get(f"/banche/callback?code=CODE42&state=wrong")
+    r = client.get("/banche/callback?code=CODE42&state=wrong")
     assert "state non valido" in r.text
 
     r = client.get(f"/banche/callback?code=CODE42&state={state}")
