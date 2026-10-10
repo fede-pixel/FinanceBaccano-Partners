@@ -68,3 +68,18 @@ def test_backup_download(client, online):
     r = client.get("/impostazioni/backup.zip")
     assert r.status_code == 200
     assert "finance.db" in zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+
+
+def test_unexpected_errors_show_friendly_page(client, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.routers import dashboard
+
+    def boom(*a, **k):
+        raise RuntimeError("guasto simulato")
+
+    monkeypatch.setattr(dashboard, "build_forecast", boom)
+    c = TestClient(app, raise_server_exceptions=False)
+    r = c.get("/")
+    assert r.status_code == 500 and "Qualcosa è andato storto" in r.text and "guasto simulato" in r.text

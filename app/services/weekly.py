@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app import config
 from app.models import Account, ChecklistItem, DocCategory
 from app.services import admin_docs as ad
-from app.services.bank_import import ImportProfile, import_transactions, new_batch_id, parse_rows, read_table
+from app.services.bank_import import ImportProfile, UnreadableFile, import_transactions, new_batch_id, parse_rows, read_table
 from app.services.fatturapa import import_invoices
 from app.services.util import get_setting
 
@@ -244,7 +244,12 @@ def process_batch(session: Session, batch: Batch) -> BatchResult:
             if account is None or profile is None:
                 res.pending.append(item)  # il file resta: si completa dalla schermata di mappatura
                 continue
-            txs, errors = parse_rows(read_table(content, item.name), profile)
+            try:
+                rows = read_table(content, item.name)
+            except UnreadableFile as exc:
+                res.errors.append(f"{item.name}: {exc}")
+                continue
+            txs, errors = parse_rows(rows, profile)
             if not txs:
                 res.errors.append(f"{item.name}: nessun movimento riconosciuto con la mappatura di '{account.name}'")
                 res.pending.append(item)

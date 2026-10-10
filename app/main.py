@@ -73,6 +73,24 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Finance & Admin – Baccano Partners", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")
 
+    @app.exception_handler(Exception)
+    async def unexpected_error(request: Request, exc: Exception):
+        # Invece di "Internal Server Error": messaggio comprensibile e dettaglio tecnico da inoltrare
+        from html import escape
+
+        from fastapi.responses import HTMLResponse
+
+        log.exception("Errore su %s", request.url.path)
+        detail = escape(f"{exc.__class__.__name__}: {exc}")[:500]
+        return HTMLResponse(
+            '<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<link rel="stylesheet" href="/static/css/app.css"><title>Errore</title></head><body><div style="max-width:640px;margin:10vh auto;padding:0 16px">'
+            '<div class="card"><h1>Qualcosa è andato storto</h1><p>L\'operazione non è stata completata. I dati già salvati non sono stati toccati.</p>'
+            f'<p class="small muted">Dettaglio tecnico (da inoltrare a chi gestisce l\'app): <code>{detail}</code></p>'
+            '<p><a class="btn" href="javascript:history.back()">← Torna indietro</a> <a class="btn btn-ghost" href="/">Dashboard</a></p></div></div></body></html>',
+            status_code=500,
+        )
+
     @app.get("/healthz", include_in_schema=False)
     def healthz():
         return {"ok": True}

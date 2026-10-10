@@ -14,34 +14,36 @@
     {% for it in batch.items %}{% set i = loop.index0 %}
       <tr>
         <td>{{ it.name }}{% if it.note %}<div class="small muted">{{ it.note }}</div>{% endif %}</td>
-        <td><select name="kind_{{ i }}">
+        <td><select name="kind_{{ i }}" onchange="const td=this.closest('tr').querySelectorAll('[data-for]');td.forEach(d=>d.hidden=d.dataset.for!==this.value)">
           {% for k, l in [('banca','Movimenti bancari'), ('fattura','Fattura elettronica'), ('documento','Documento per il commercialista'), ('ignora','Ignora')] %}
           <option value="{{ k }}" {{ 'selected' if it.kind == k }}>{{ l }}</option>{% endfor %}
         </select></td>
         <td>
-          {% if it.kind == 'banca' %}
+          <div data-for="banca" {{ 'hidden' if it.kind != 'banca' }}>
             <select name="account_{{ i }}">
               <option value="0">— scegli il conto —</option>
               {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if it.account_id == a.id }}>{{ a.name }}</option>{% endfor %}
             </select>
+            {% if it.kind == 'banca' %}
             {% if not it.account_id %}<span class="badge warn">conto da scegliere</span>
             {% elif not profiles.get(it.account_id) %}<span class="badge info">prima volta: indicherai le colonne</span>
             {% else %}<span class="badge good">riconosciuto</span>{% endif %}
-          {% elif it.kind == 'fattura' %}
-            <span class="small muted">Scadenze in entrate/uscite previste</span>
-          {% else %}
+            {% endif %}
+          </div>
+          <div data-for="fattura" class="small muted" {{ 'hidden' if it.kind != 'fattura' }}>Scadenze in entrate/uscite previste</div>
+          <div data-for="documento" {{ 'hidden' if it.kind != 'documento' }}>
             <select name="category_{{ i }}">
               {% for c in cats %}<option value="{{ c.code }}" {{ 'selected' if it.category == c.code }}>{{ c.name }}</option>{% endfor %}
             </select>
             <input type="month" name="period_{{ i }}" value="{{ it.period }}">
-          {% endif %}
+          </div>
         </td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
   </div>
-  <p class="small muted" style="margin-top:8px">Se cambi il tipo di un file, salva: verrà trattato secondo il nuovo tipo (per i documenti viene usata la tipologia "Spese senza fattura elettronica" se non ne scegli un'altra).</p>
+  <p class="small muted" style="margin-top:8px">Un estratto conto in PDF è proposto come documento per il commercialista: se vuoi anche importarne i movimenti, scegli "Movimenti bancari" e il conto.</p>
 </div>
 <button>Salva tutto</button>
 </form>

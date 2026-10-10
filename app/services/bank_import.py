@@ -104,8 +104,139 @@ def detect_delimiter(text: str) -> str:
     return best
 
 
+class UnreadableFile(ValueError):
+    pass
+
+
+TABLE_EXTENSIONS = (".csv", ".txt", ".xlsx", ".xlsm", ".xls", ".pdf")
+
+
+_HEADER_HINT = re.compile(r"\b(data|date)\b", re.I)
+_DATE_START = re.compile(r"^\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}|^\d{4}-\d{2}-\d{2}")
+
+
+def _pdf_lines(page) -> list[list[dict]]:
+    """Parole della pagina raggruppate per riga (stessa altezza), ordinate da sinistra a destra."""
+    words = sorted(page.extract_words(keep_blank_chars=False, x_tolerance=1.5), key=lambda w: (round(w["top"]), w["x0"]))
+    lines: list[list[dict]] = []
+    for w in words:
+        if lines and abs(lines[-1][0]["top"] - w["top"]) <= 3:
+            lines[-1].append(w)
+        else:
+            lines.append([w])
+    return [sorted(ln, key=lambda w: w["x0"]) for ln in lines]
+
+
+def _header_columns(line: list[dict]) -> list[tuple[float, float, str]]:
+    """Unisce le parole vicine dell'intestazione in colonne: (x0, x1, nome)."""
+    cols: list[list] = []
+    for w in line:
+        if cols and w["x0"] - cols[-1][1] < 6:
+            cols[-1][1], cols[-1][2] = w["x1"], cols[-1][2] + " " + w["text"]
+        else:
+            cols.append([w["x0"], w["x1"], w["text"]])
+    return [tuple(c) for c in cols]
+
+
+def _assign(line: list[dict], cols: list[tuple[float, float, str]]) -> list[str]:
+    cells = [""] * len(cols)
+    for w in line:
+        center = (w["x0"] + w["x1"]) / 2
+        inside = [i for i, (x0, x1, _) in enumerate(cols) if x0 - 4 <= center <= x1 + 4]
+        if inside:
+            i = inside[0]
+        elif w["x1"] <= cols[0][0]:
+            i = 0
+        else:
+            # testo lungo che sborda: va alla colonna che inizia più vicino alla sua sinistra; numeri al centro più vicino
+            numeric = re.fullmatch(r"[-+]?[\d.,]+-?", w["text"]) is not None
+            if numeric:
+                i = min(range(len(cols)), key=lambda k: abs((cols[k][0] + cols[k][1]) / 2 - center))
+            else:
+                i = max((k for k in range(len(cols)) if cols[k][0] <= w["x0"] + 4), default=0)
+        cells[i] = (cells[i] + " " + w["text"]).strip()
+    return cells
+
+
+def _pdf_by_position(pdf) -> list[list[str]]:
+    """Ricostruisce la tabella dalle posizioni delle parole, usando le colonne dell'intestazione."""
+    out: list[list[str]] = []
+    cols = None
+    for page in pdf.pages:
+        last_top = None
+        for line in _pdf_lines(page):
+            text = " ".join(w["text"] for w in line)
+            if len(line) >= 3 and _HEADER_HINT.search(text) and not _DATE_START.match(line[0]["text"]):
+                new_cols = _header_columns(line)
+                if len(new_cols) >= 3:
+                    if cols is None:
+                        out.append([c[2] for c in new_cols])
+                    cols = new_cols
+                    continue
+            if cols is None:
+                continue
+            cells = _assign(line, cols)
+            top = line[0]["top"]
+            if _DATE_START.match(cells[0]) or len(out) == 1:
+                out.append(cells)
+                last_top = top
+            elif last_top is not None and 0 < top - last_top <= 24:
+                # riga di continuazione (descrizione su più righe), vicina alla precedente:
+                # accodo solo testo, mai nella colonna della data; piè di pagina e note lontane vengono ignorati
+                prev = out[-1]
+                for i, c in enumerate(cells[1:], start=1):
+                    if c and not re.fullmatch(r"[-+]?[\d.,]+-?", c):
+                        prev[i] = (prev[i] + " " + c).strip()
+                last_top = top
+    return out
+
+
+def _read_pdf(content: bytes) -> list[list[str]]:
+    """Estratto conto in PDF: tabelle con bordi, poi colonne ricostruite dalle posizioni, poi testo grezzo."""
+    import pdfplumber
+
+    def clean(row) -> list[str]:
+        return [re.sub(r"\s+", " ", c or "").strip() for c in row]
+
+    try:
+        pdf = pdfplumber.open(io.BytesIO(content))
+    except Exception as exc:
+        raise UnreadableFile(f"PDF non leggibile ({exc})") from exc
+    with pdf:
+        rows: list[list[str]] = []
+        for page in pdf.pages:
+            for table in page.extract_tables() or []:
+                rows += [clean(r) for r in table if any(c for c in r)]
+        if len(rows) > 1 and max(len(r) for r in rows) >= 3 and any(_HEADER_HINT.search(" ".join(r)) for r in rows[:10]):
+            width = max(len(r) for r in rows)
+            return [r + [""] * (width - len(r)) for r in rows]
+        rows = _pdf_by_position(pdf)
+        if len(rows) > 1:
+            return rows
+        lines = []
+        for page in pdf.pages:
+            text = page.extract_text(layout=True) or ""
+            lines += [re.split(r"\s{2,}", ln.strip()) for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        raise UnreadableFile("il PDF non contiene testo (forse è una scansione): scarica il CSV o l'Excel dall'home banking")
+    width = max(len(r) for r in lines)
+    return [r + [""] * (width - len(r)) for r in lines]
+
+
 def read_table(content: bytes, filename: str) -> list[list[str]]:
+    """Legge CSV, Excel o PDF e restituisce le righe come liste di stringhe. Solleva UnreadableFile."""
+    try:
+        return _read_table(content, filename)
+    except UnreadableFile:
+        raise
+    except Exception as exc:
+        raise UnreadableFile(f"file non leggibile ({exc.__class__.__name__}: {exc})") from exc
+
+
+def _read_table(content: bytes, filename: str) -> list[list[str]]:
     name = filename.lower()
+    if name.endswith(".pdf") or content[:5] == b"%PDF-":
+        return _read_pdf(content)
     if name.endswith((".xlsx", ".xlsm")):
         import openpyxl
 
@@ -128,6 +259,8 @@ def read_table(content: bytes, filename: str) -> list[list[str]]:
                     row.append(_cell_to_str(cell.value))
             rows.append(row)
         return rows
+    if b"\x00" in content[:4096]:
+        raise UnreadableFile("non è un file di testo CSV: usa CSV, Excel o PDF")
     for enc in ("utf-8-sig", "cp1252", "latin-1"):
         try:
             text = content.decode(enc)

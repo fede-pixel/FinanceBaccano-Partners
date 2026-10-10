@@ -10,7 +10,16 @@ from sqlalchemy.orm import Session
 from app import config
 from app.db import get_session
 from app.models import ACCOUNT_KINDS, Account, BalanceSnapshot, Transaction
-from app.services.bank_import import ImportProfile, guess_profile, import_transactions, new_batch_id, parse_rows, read_table
+from app.services.bank_import import (
+    TABLE_EXTENSIONS,
+    ImportProfile,
+    UnreadableFile,
+    guess_profile,
+    import_transactions,
+    new_batch_id,
+    parse_rows,
+    read_table,
+)
 from app.services.forecast import account_statuses
 from app.services.util import month_bounds, parse_amount, parse_date
 from app.web import redirect, render
@@ -227,10 +236,17 @@ def import_form(request: Request, conto: int = 0, session: Session = Depends(get
 @router.post("/movimenti/import")
 async def import_upload(account_id: int = Form(...), file: UploadFile = File(...), session: Session = Depends(get_session)):
     content = await file.read()
+    back = f"/movimenti/import?conto={account_id}"
     if not content:
-        return redirect("/movimenti/import", err="File vuoto")
+        return redirect(back, err="File vuoto")
     token = uuid.uuid4().hex
     suffix = Path(file.filename or "file.csv").suffix.lower() or ".csv"
+    if suffix not in TABLE_EXTENSIONS:
+        return redirect(back, err=f"Formato {suffix} non supportato: carica l'estratto movimenti in CSV, Excel o PDF")
+    try:
+        read_table(content, file.filename or f"file{suffix}")
+    except UnreadableFile as exc:
+        return redirect(back, err=f"Non riesco a leggere il file: {exc}")
     (config.IMPORTS_DIR / f"{token}{suffix}").write_bytes(content)
     return redirect(f"/movimenti/import/{token}{suffix}?conto={account_id}")
 
@@ -239,7 +255,10 @@ def _load_rows(token: str) -> list[list[str]]:
     path = config.IMPORTS_DIR / Path(token).name
     if not path.exists():
         raise HTTPException(404, "File di import non trovato: ricaricalo")
-    return read_table(path.read_bytes(), path.name)
+    try:
+        return read_table(path.read_bytes(), path.name)
+    except UnreadableFile as exc:
+        raise HTTPException(400, f"Non riesco a leggere il file: {exc}") from exc
 
 
 def _profile_from_form(form) -> ImportProfile:
