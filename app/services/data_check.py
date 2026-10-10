@@ -113,6 +113,31 @@ def run_checks(session: Session, today: date | None = None) -> list[Check]:
     else:
         checks.append(Check("Possibili fatture doppie", "ok", "Nessuna."))
 
+    # 4b. acconti TD02 forse contati due volte: la fattura di saldo ha lo stesso imponibile dell'acconto
+    from datetime import timedelta
+    from itertools import combinations
+
+    suspects = []
+    passive = [i for i in invoices if i.direction == "passiva" and i.doc_type not in SELF_INVOICE_TYPES]
+    used: set[int] = set()
+    # dal più recente: ogni saldo si abbina all'acconto più vicino e una sola volta
+    for adv in sorted([i for i in passive if i.doc_type == "TD02" and i.taxable_cents], key=lambda i: i.date, reverse=True):
+        later = [i for i in passive if i.id != adv.id and i.id not in used and i.doc_type in ("TD01", "TD24")
+                 and i.counterparty == adv.counterparty and adv.date <= i.date <= adv.date + timedelta(days=120) and i.taxable_cents]
+        found = next((c for n in (1, 2, 3) for c in combinations(later, n)
+                      if abs(sum(i.taxable_cents for i in c) - adv.taxable_cents) <= 100), None)
+        if found:
+            used.update(i.id for i in found)
+            suspects.append((adv, found))
+    if suspects:
+        tot = sum(a.taxable_cents for a, _ in suspects)
+        checks.append(Check("Acconti fornitori forse contati due volte", "warn",
+                            f"{len(suspects)} fatture di acconto (TD02) hanno una fattura di saldo successiva con lo stesso imponibile: "
+                            f"se il saldo non scala l'acconto, il costo è contato due volte e l'EBITDA risulta più basso fino a "
+                            f"{fmt_eur(tot)}. Controlla le fatture (il saldo dovrebbe sottrarre l'acconto) e chiedi al commercialista.",
+                            [f"{a.counterparty}: acconto n. {a.number} del {a.date:%d/%m/%Y} ({fmt_eur(a.taxable_cents)}) → saldo "
+                             + ", ".join(f"n. {i.number} del {i.date:%d/%m/%Y}" for i in c) for a, c in suspects[:8]]))
+
     # 5. movimenti: copertura dei conti
     cov = invoice_match.coverage(session)
     lines, status = [], "ok"

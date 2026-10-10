@@ -58,3 +58,15 @@ def test_invalid_rows_are_skipped_and_reported(session):
     checks = {c.title: c for c in data_check.run_checks(session, date(2026, 10, 10))}
     assert checks["Movimenti non validi"].status == "err"
     assert "1900" not in checks["Movimenti bancari caricati"].detail + " ".join(checks["Movimenti bancari caricati"].items)
+
+
+def test_supplier_advances_possibly_double_counted(session):
+    def inv(n, tipo, d, taxable):
+        session.add(Invoice(direction="passiva", doc_type=tipo, number=n, date=d, counterparty="MONDATI E SELVA SRL",
+                            total_cents=taxable * 122 // 100, vat_cents=taxable * 22 // 100, file_name="x", file_hash=n))
+    inv("206", "TD02", date(2026, 5, 21), 540_000)
+    inv("327", "TD02", date(2026, 7, 16), 540_000)
+    inv("333", "TD01", date(2026, 7, 18), 540_000)
+    session.commit()
+    c = {c.title: c for c in data_check.run_checks(session)}["Acconti fornitori forse contati due volte"]
+    assert len(c.items) == 1 and "n. 327" in c.items[0] and "5.400,00" in c.detail
