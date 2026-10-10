@@ -189,6 +189,14 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
         recon[f"{key}_novat"] = sum(1 for i in year_inv if i.direction == direction and i.vat_cents is None and i.total_cents)
         recon[f"{key}_zero"] = sum(1 for i in year_inv if i.direction == direction and not i.total_cents)
     recon["aruba_like"] = recon["revenue"] - (recon["costs"] - recon["self_costs"])
+    # stessi conti IVA compresa (come i totali della lista di Aruba e come esce la fattura)
+    def gross(i: Invoice) -> int:
+        return (-1 if i.doc_type in CREDIT_NOTE_TYPES else 1) * abs(i.total_cents)
+    recon["revenue_gross"] = sum(gross(i) for i in year_inv if i.direction == "attiva" and i.doc_type not in SELF_INVOICE_TYPES)
+    recon["costs_gross"] = sum(gross(i) for i in year_inv if i.direction == "passiva" and i.doc_type not in SELF_INVOICE_TYPES)
+    recon["self_gross"] = sum(gross(i) for i in year_inv if i.doc_type in SELF_INVOICE_TYPES)
+    recon["diff_gross"] = recon["revenue_gross"] - recon["costs_gross"]
+    recon["net_vat"] = recon["diff_gross"] - recon["aruba_like"]  # IVA sulle vendite − IVA sugli acquisti
     ytd_revenue = sum(r.revenue for r in year_rows)
     ytd_ebitda = sum(r.ebitda for r in year_rows)
     complete = [r for r in rows if r.end < _month_start(today)]

@@ -113,3 +113,16 @@ def test_year_totals_do_not_depend_on_window(session):
     r = six.recon
     assert r["aruba_like"] == r["revenue"] - (r["costs"] - r["self_costs"])
     assert six.ytd_ebitda == r["revenue"] - r["costs"] - r["personnel"]
+
+
+def test_recon_gross_matches_aruba_list(session):
+    """Colonna IVA compresa: emesse − ricevute come i totali della lista di Aruba (autofatture in entrambe)."""
+    _setup(session)
+    session.add(Invoice(direction="passiva", doc_type="TD17", number="AF", date=date(2026, 6, 30), counterparty="ANTHROPIC",
+                        total_cents=9_080, vat_cents=1_637, file_name="x", file_hash="af"))
+    session.commit()
+    r = kpi.build(session, 12, TODAY).recon
+    emesse_lista = r["revenue_gross"] + r["self_gross"]
+    ricevute_lista = r["costs_gross"] + r["self_gross"]
+    assert emesse_lista - ricevute_lista == r["diff_gross"] == 6 * 3_660_000 - 122_000 - 6 * 1_220_000
+    assert r["net_vat"] == r["diff_gross"] - r["aruba_like"] == 6 * 660_000 - 22_000 - 6 * 220_000

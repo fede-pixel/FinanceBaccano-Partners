@@ -41,17 +41,21 @@
 {% set r = rep.recon %}
 <details class="card" open>
   <summary><strong>Confronto con Aruba (anno in corso)</strong> — da "fatturato attivo − passivo" all'EBITDA</summary>
-  <table class="small" style="max-width:720px;margin-top:8px">
+  <table class="small" style="max-width:860px;margin-top:8px">
+    <thead><tr><th></th><th class="num">Imponibile<div class="muted" style="font-weight:400">come il grafico "Fatturato" di Aruba</div></th>
+      <th class="num">IVA compresa<div class="muted" style="font-weight:400">come i totali della lista di Aruba</div></th></tr></thead>
     <tbody>
-      <tr><td>Ricavi: imponibile fatture emesse (= fatturato attivo Aruba)</td><td class="num">{{ r.revenue|eur }}</td></tr>
-      <tr><td>− Costi: imponibile fatture ricevute <em>senza</em> autofatture (= fatturato passivo Aruba)</td><td class="num">{{ (r.self_costs - r.costs)|eur_sign }}</td></tr>
-      <tr><td><strong>= Differenza come su Aruba</strong></td><td class="num"><strong>{{ r.aruba_like|eur_sign }}</strong></td></tr>
-      <tr><td>− Autofatture servizi esteri (TD17/TD18: Google, AWS, Anthropic…), costi veri che Aruba non conta</td><td class="num">{{ (-r.self_costs)|eur_sign }}</td></tr>
-      <tr><td>− Personale (stipendi pagati dalla banca)</td><td class="num">{{ (-r.personnel)|eur_sign }}</td></tr>
-      <tr><td><strong>= EBITDA stimato</strong></td><td class="num"><strong>{{ rep.ytd_ebitda|eur_sign }}</strong></td></tr>
+      <tr><td>Fatture emesse</td><td class="num">{{ r.revenue|eur }}</td><td class="num">{{ (r.revenue_gross + r.self_gross)|eur }}</td></tr>
+      <tr><td>− Fatture ricevute</td><td class="num">{{ (r.self_costs - r.costs)|eur_sign }}</td><td class="num">{{ (-(r.costs_gross + r.self_gross))|eur_sign }}</td></tr>
+      <tr><td><strong>= Differenza emesse − ricevute</strong></td><td class="num"><strong>{{ r.aruba_like|eur_sign }}</strong></td><td class="num"><strong>{{ r.diff_gross|eur_sign }}</strong></td></tr>
+      <tr><td class="muted">di cui IVA (sulle vendite meno quella sugli acquisti): non è guadagno, va versata allo Stato</td><td></td><td class="num muted">{{ r.net_vat|eur_sign }}</td></tr>
+      <tr><td>− Autofatture servizi esteri (TD17/TD18: Google, AWS, Anthropic…), costi veri che Aruba non conta nel grafico</td><td class="num">{{ (-r.self_costs)|eur_sign }}</td><td></td></tr>
+      <tr><td>− Personale (stipendi pagati dalla banca)</td><td class="num">{{ (-r.personnel)|eur_sign }}</td><td></td></tr>
+      <tr><td><strong>= EBITDA stimato</strong> (sempre sull'imponibile: l'IVA non è né ricavo né costo)</td><td class="num"><strong>{{ rep.ytd_ebitda|eur_sign }}</strong></td><td></td></tr>
     </tbody>
   </table>
-  <p class="small muted" style="margin-top:6px">Se la "differenza come su Aruba" non coincide con quella che vedi su Aruba, le cause possibili sono qui sotto. Le fatture ancora da incassare o da pagare non c'entrano: entrambi i conti sono per data fattura, non per pagamento.</p>
+  <p class="small muted" style="margin-top:6px"><strong>Perché due colonne.</strong> La fattura e la lista di Aruba mostrano il totale IVA compresa; il grafico "Fatturato" di Aruba usa l'imponibile e non conta le autofatture. Nella colonna IVA compresa le autofatture sono contate come nella lista di Aruba, sia tra le emesse sia tra le ricevute, quindi nella differenza si annullano. L'utile si misura sull'imponibile, perché l'IVA incassata va versata allo Stato e quella pagata si recupera.</p>
+  <p class="small muted" style="margin-top:6px">Se una delle due differenze non coincide con quella che calcoli su Aruba, le cause possibili sono qui sotto. Le fatture ancora da incassare o da pagare non c'entrano: entrambi i conti sono per data fattura, non per pagamento.</p>
   <ul class="note-list small">
     {% if r.rev_novat or r.cost_novat %}<li class="neg"><strong>Fatture senza IVA indicata</strong>: {{ r.rev_novat }} emesse e {{ r.cost_novat }} ricevute contano IVA compresa. Ricaricale da Fatture (Aruba) per correggere.</li>{% endif %}
     {% if r.rev_zero or r.cost_zero %}<li><strong>Fatture con importo zero</strong>: {{ r.rev_zero }} emesse e {{ r.cost_zero }} ricevute (alcune arrivano dal report di Aruba senza totale: caricane gli XML).</li>{% endif %}
