@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import re
+from pathlib import Path
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta
 
@@ -234,6 +235,10 @@ def _pdf_by_position(pdf) -> list[list[str]]:
     return out
 
 
+def _date_rows(rows: list[list[str]]) -> int:
+    return sum(1 for r in rows if any(_starts_with_date(c) for c in r[:2]))
+
+
 def _read_pdf(content: bytes) -> list[list[str]]:
     """Estratto conto in PDF: tabelle con bordi, poi colonne ricostruite dalle posizioni, poi testo grezzo."""
     import pdfplumber
@@ -246,16 +251,19 @@ def _read_pdf(content: bytes) -> list[list[str]]:
     except Exception as exc:
         raise UnreadableFile(f"PDF non leggibile ({exc})") from exc
     with pdf:
-        rows: list[list[str]] = []
+        ruled: list[list[str]] = []
         for page in pdf.pages:
             for table in page.extract_tables() or []:
-                rows += [clean(r) for r in table if any(c for c in r)]
-        if len(rows) > 1 and max(len(r) for r in rows) >= 3 and any(_HEADER_HINT.search(" ".join(r)) for r in rows[:10]):
-            width = max(len(r) for r in rows)
-            return [r + [""] * (width - len(r)) for r in rows]
-        rows = _pdf_by_position(pdf)
-        if len(rows) > 1:
-            return rows
+                ruled += [clean(r) for r in table if any(c for c in r)]
+        if ruled:
+            width = max(len(r) for r in ruled)
+            ruled = [r + [""] * (width - len(r)) for r in ruled]
+        positional = _pdf_by_position(pdf)
+        # Alcune banche mettono nei riquadri solo intestazione e piè di pagina, e i movimenti come testo libero:
+        # tengo il metodo che trova più righe con una data
+        best = max((ruled, positional), key=_date_rows)
+        if _date_rows(best) > 0:
+            return best
         lines = []
         for page in pdf.pages:
             text = page.extract_text(layout=True) or ""
@@ -266,10 +274,20 @@ def _read_pdf(content: bytes) -> list[list[str]]:
     return [r + [""] * (width - len(r)) for r in lines]
 
 
+_TABLE_CACHE: dict[str, list[list[str]]] = {}
+
+
 def read_table(content: bytes, filename: str) -> list[list[str]]:
     """Legge CSV, Excel o PDF e restituisce le righe come liste di stringhe. Solleva UnreadableFile."""
+    key = hashlib.sha256(content).hexdigest() + Path(filename).suffix.lower()
+    if key in _TABLE_CACHE:
+        return [list(r) for r in _TABLE_CACHE[key]]
     try:
-        return _read_table(content, filename)
+        rows = _read_table(content, filename)
+        if len(_TABLE_CACHE) >= 8:
+            _TABLE_CACHE.pop(next(iter(_TABLE_CACHE)))
+        _TABLE_CACHE[key] = rows
+        return [list(r) for r in rows]
     except UnreadableFile:
         raise
     except Exception as exc:

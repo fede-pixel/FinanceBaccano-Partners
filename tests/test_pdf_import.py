@@ -123,3 +123,32 @@ def test_unruled_pdf_with_textual_dates():
     assert p.date_col == "Data transazione" and p.amount_col == "Importo"
     txs, errors = parse_rows(rows, p)
     assert [(t.date.day, t.amount_cents) for t in txs] == [(1, -4520), (3, 100000)] and not errors
+
+
+def test_boxed_header_and_footer_with_free_text_rows():
+    """Come l'estratto Vivid: intestazione e piè di pagina in riquadri, movimenti come testo libero."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    xs = [40, 150, 260, 420, 500, 570]
+    header = ["Data transazione", "Tipo", "Descrizione", "Importo", "Saldo"]
+    pages = [[("01.10.2026", "Carta", "Amazon EU", "-45,20 €", "954,80 €"), ("02.10.2026", "Bonifico", "Cliente Rossi", "1.000,00 €", "1.954,80 €")],
+             [("03.10.2026", "Addebito", "Canone", "-9,00 €", "1.945,80 €")]]
+    for n, rows in enumerate(pages, start=1):
+        for i, h in enumerate(header):  # intestazione in celle con bordo
+            c.rect(xs[i], 740, xs[i + 1] - xs[i], 20)
+            c.drawString(xs[i] + 3, 746, h)
+        y = 720
+        for row in rows:
+            for i, v in enumerate(row):
+                c.drawString(xs[i] + 3, y, v)
+            y -= 16
+        for i in range(len(header)):  # piè di pagina nella stessa griglia
+            c.rect(xs[i], 40, xs[i + 1] - xs[i], 20)
+        c.drawString(xs[1] + 3, 46, f"Pagina {n} di {len(pages)}")
+        c.showPage()
+    c.save()
+    rows = read_table(buf.getvalue(), "vivid.pdf")
+    p = guess_profile(rows)
+    txs, errors = parse_rows(rows, p)
+    assert [(t.date.day, t.amount_cents) for t in txs] == [(1, -4520), (2, 100000), (3, -900)], rows[:6]
+    assert not errors
