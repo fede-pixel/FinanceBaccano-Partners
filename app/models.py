@@ -34,7 +34,13 @@ class Account(Base):
     color: Mapped[str] = mapped_column(String(7), default="#2a78d6")
     csv_profile: Mapped[str] = mapped_column(Text, default="")  # JSON mappatura colonne
     notes: Mapped[str] = mapped_column(Text, default="")
+    # Collegamento Open Banking (Enable Banking): uid del conto nella sessione PSD2
+    connection_id: Mapped[int | None] = mapped_column(
+        ForeignKey("bank_connections.id", ondelete="SET NULL"), nullable=True
+    )
+    external_uid: Mapped[str] = mapped_column(String(100), default="")
 
+    connection: Mapped["BankConnection | None"] = relationship(back_populates="accounts")
     snapshots: Mapped[list["BalanceSnapshot"]] = relationship(
         back_populates="account", cascade="all, delete-orphan", order_by="BalanceSnapshot.date"
     )
@@ -42,6 +48,28 @@ class Account(Base):
     @property
     def kind_label(self) -> str:
         return ACCOUNT_KINDS.get(self.kind, self.kind)
+
+
+class BankConnection(Base):
+    """Consenso PSD2 verso una banca (tramite Enable Banking). Dura al massimo 90-180 giorni."""
+
+    __tablename__ = "bank_connections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(20), default="enablebanking")
+    aspsp_name: Mapped[str] = mapped_column(String(200))
+    aspsp_country: Mapped[str] = mapped_column(String(2), default="IT")
+    psu_type: Mapped[str] = mapped_column(String(10), default="business")
+    status: Mapped[str] = mapped_column(String(20), default="in_attesa")  # in_attesa | attivo | scaduto | errore
+    state: Mapped[str] = mapped_column(String(64), default="")  # anti-CSRF del redirect
+    session_id: Mapped[str] = mapped_column(String(100), default="")
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    session_accounts: Mapped[str] = mapped_column(Text, default="")  # JSON dei conti restituiti dalla banca
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+
+    accounts: Mapped[list["Account"]] = relationship(back_populates="connection")
 
 
 class BalanceSnapshot(Base):

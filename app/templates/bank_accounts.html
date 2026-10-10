@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Conti di {{ conn.aspsp_name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Conti di {{ conn.aspsp_name }}</h1>
+  <div class="muted">Associa ogni conto della banca a un conto dell'app (o creane uno nuovo). Quelli ignorati non vengono scaricati.</div></div>
+  <a href="/banche">← Banche collegate</a></div>
+<form method="post" action="/banche/{{ conn.id }}/conti">
+<div class="card">
+  {% if rows %}
+  <table>
+    <thead><tr><th>Conto in banca</th><th>Valuta</th><th>Collega a</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.label }}{% if r.type %}<div class="small muted">{{ r.type }}</div>{% endif %}</td>
+        <td>{{ r.currency }}</td>
+        <td><select name="map_{{ r.uid }}">
+          <option value="ignora">Ignora</option>
+          <option value="nuovo" {{ 'selected' if not r.current }}>+ Crea nuovo conto</option>
+          {% for a in locals_ %}<option value="{{ a.id }}" {{ 'selected' if r.current and r.current.id == a.id }}>{{ a.name }}{% if a.iban %} · {{ a.iban }}{% endif %}</option>{% endfor %}
+        </select></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">La banca non ha restituito conti. In modalità ristretta controlla di averli collegati all'applicazione nel Control Panel di Enable Banking.</div>{% endif %}
+</div>
+<button>Salva e scarica i movimenti</button>
+</form>
+{% endblock %}

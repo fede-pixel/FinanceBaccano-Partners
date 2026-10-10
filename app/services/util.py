@@ -152,6 +152,11 @@ SETTING_DEFAULTS = {
     "include_overdue_in_forecast": "1",
     "reminder_days": "5",
     "match_tolerance_days": "7",
+    "eb_application_id": "",
+    "eb_key_path": "",
+    "eb_redirect_url": "",
+    "eb_sync_hours": "6",
+    "eb_initial_days": "90",
 }
 
 

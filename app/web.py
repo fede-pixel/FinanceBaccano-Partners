@@ -29,6 +29,7 @@ NAV = [
         ("/fatture", "Fatture (Aruba)"),
         ("/ricorrenze", "Ricorrenze"),
         ("/conti", "Conti e carte"),
+        ("/banche", "Banche collegate"),
     ]),
     ("Administration", [
         ("/documenti", "Scadenzario documenti"),

@@ -1,12 +1,12 @@
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.models import Account, PlannedItem
+from app.models import Account, BankConnection, PlannedItem
 from app.services.admin_docs import ensure_checklist, open_deadlines, period_label
 from app.services.forecast import Forecast, account_statuses, build_forecast
 from app.services.util import add_months, get_setting, month_bounds, month_label
@@ -48,6 +48,11 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
     reminder_days = int(get_setting(session, "reminder_days") or 5)
     deadlines = open_deadlines(session, today, within_days=reminder_days)
     has_accounts = session.scalar(select(Account.id).limit(1)) is not None
+    now = datetime.now()
+    bank_alerts = [
+        c for c in session.scalars(select(BankConnection).where(BankConnection.session_id != ""))
+        if c.status in ("scaduto", "errore") or c.last_error or (c.valid_until and c.valid_until - now < timedelta(days=14))
+    ]
     return render(
         request,
         "dashboard.html",
@@ -60,6 +65,8 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         chart=chart_payload(fc),
         month_title=month_label(today.year, today.month),
         has_accounts=has_accounts,
+        bank_alerts=bank_alerts,
+        has_banks=session.scalar(select(BankConnection.id).limit(1)) is not None,
         stale_after=today - timedelta(days=7),
     )
 

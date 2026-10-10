@@ -45,6 +45,18 @@ FBP_DATA_DIR=~/FinanceBaccano-demo .venv/bin/python run.py
 6. **Riconciliazione**: abbina i movimenti importati alle voci previste. Gli abbinamenti certi si fanno con un clic.
 7. **Scadenzario documenti**: per ogni mese, carica i documenti per tipologia. Lista movimenti banche, carte e contanti si possono **generare in Excel** dai movimenti. Quando hai finito, apri **Pacchetto commercialista**: lo ZIP viene creato nella cartella Drive, l'email si apre già compilata e lo scadenzario viene segnato come inviato.
 
+## Open Banking (Enable Banking)
+
+Pagina **Banche collegate**: saldi e movimenti si scaricano da soli (PSD2, sola lettura), all'avvio dell'app e poi ogni 6 ore mentre è aperta. Funziona anche il pulsante "Aggiorna dalle banche" in dashboard.
+
+1. Crea un account su [enablebanking.com](https://enablebanking.com) → Control Panel → *API applications* → nuova applicazione **Production**, con redirect URL `http://127.0.0.1:8765/banche/callback`.
+2. Il browser scarica la chiave privata `.pem`: caricala in *Banche collegate → Configurazione* insieme all'Application ID.
+3. Nel Control Panel collega i tuoi conti all'applicazione. In modalità ristretta l'API vede solo quelli.
+4. In app: *Collega una banca* → scegli Revolut, Vivid o la tua BCC → autorizzi sul sito della banca → associ i conti.
+5. Ogni 90–180 giorni la banca chiede di rinnovare il consenso: la dashboard avvisa 14 giorni prima, poi basta un clic su "Rinnova consenso".
+
+Se un conto aveva già movimenti importati da file, la sincronizzazione riparte dal giorno successivo all'ultimo movimento: niente doppioni.
+
 ## Come funziona il forecast
 
 - **Saldo di un conto** = ultimo *saldo certo* (inserito a mano, oppure letto dalla colonna saldo del file importato) + movimenti successivi.
@@ -67,7 +79,7 @@ Per un solo utente la soluzione locale è più semplice, sicura ed economica. Il
 ## Roadmap
 
 - [x] **Fase 1**: conti, import CSV/Excel, previsti, ricorrenze, fatture XML Aruba, forecast, riconciliazione, scadenzario, pacchetto commercialista
-- [ ] **Fase 2 – Open Banking** (PSD2): sincronizzazione automatica di saldi e movimenti di Vivid, Revolut Business e BCC tramite un aggregatore. Fornitori da valutare: Enable Banking, Salt Edge, Tink, Yapily; per Revolut Business anche la sua API diretta e gratuita. Va verificata la copertura di Vivid e BCC (CBI Globe) e il costo per conto.
+- [x] **Fase 2 – Open Banking** con Enable Banking: sincronizzazione automatica di saldi e movimenti, rinnovo del consenso, ricollegamento dei conti per IBAN
 - [ ] **Fase 3 – Aruba API**: download automatico delle fatture emesse e ricevute, senza export manuale.
 - [ ] **Fase 4**: raccolta automatica dalla casella email delle ricevute dei fornitori esteri (Google, AWS, Meta…); lettura OCR di scontrini e ricevute; notifiche desktop delle scadenze; eseguibile installabile (.exe/.app).
 

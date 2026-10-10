@@ -286,7 +286,7 @@ def closing_balance(txs: list[ParsedTx]) -> tuple[date, int] | None:
 
 
 def import_transactions(
-    session: Session, account: Account, txs: list[ParsedTx], batch: str, update_balance: bool = True
+    session: Session, account: Account, txs: list[ParsedTx], batch: str, update_balance: bool = True, source: str = "import"
 ) -> ImportResult:
     keys = dedupe_keys(txs)
     existing = set(
@@ -304,7 +304,7 @@ def import_transactions(
                 amount_cents=t.amount_cents,
                 description=t.description,
                 counterparty=t.counterparty,
-                source="import",
+                source=source,
                 dedupe_key=k,
                 import_batch=batch,
             )

@@ -8,7 +8,8 @@
     <div class="muted">{{ today|wd }} {{ today|d }}</div>
   </div>
   <div class="toolbar" style="margin:0">
-    <a class="btn" href="/movimenti/import">Importa movimenti</a>
+    {% if has_banks %}<form method="post" action="/banche/sincronizza"><input type="hidden" name="back" value="/"><button>Aggiorna dalle banche</button></form>{% endif %}
+    <a class="btn {{ 'btn-ghost' if has_banks }}" href="/movimenti/import">Importa movimenti</a>
     <a class="btn btn-ghost" href="/fatture">Importa fatture</a>
   </div>
 </div>
@@ -20,6 +21,14 @@
   2) Crea i tuoi <a href="/conti/nuovo">conti e carte</a> (Vivid, Revolut Business, BCC, cassa contanti) con il saldo iniziale.
   3) <a href="/movimenti/import">Importa i movimenti</a> e le <a href="/fatture">fatture XML di Aruba</a>.
   4) Aggiungi le <a href="/ricorrenze">uscite ricorrenti</a> (stipendi, F24, affitto…).
+</div>
+{% endif %}
+
+{% if bank_alerts %}
+<div class="alert warn"><strong>Banche collegate:</strong>
+  {% for c in bank_alerts %}{{ c.aspsp_name }} –
+    {% if c.status == 'scaduto' %}consenso scaduto{% elif c.last_error %}errore di sincronizzazione{% else %}consenso in scadenza il {{ c.valid_until|d }}{% endif %}{{ ", " if not loop.last }}
+  {% endfor %}. <a href="/banche">Gestisci →</a>
 </div>
 {% endif %}
 

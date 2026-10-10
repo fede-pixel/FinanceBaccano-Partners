@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Banche collegate{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Banche collegate (Open Banking)</h1>
+  <div class="muted">Saldi e movimenti scaricati in automatico dalle banche tramite Enable Banking (PSD2, sola lettura).</div></div>
+  {% if conns %}<form method="post" action="/banche/sincronizza"><button>Sincronizza tutte ora</button></form>{% endif %}
+</div>
+
+{% for c in conns %}
+<div class="card">
+  <div class="page-head" style="margin-bottom:8px">
+    <div>
+      <h2 style="margin:0">{{ c.aspsp_name }} <span class="small muted">({{ c.aspsp_country }} · {{ c.psu_type }})</span></h2>
+      <div class="small muted">
+        {% if c.status == 'attivo' %}<span class="badge good">Attivo</span>
+        {% elif c.status == 'scaduto' or (c.valid_until and c.valid_until < now) %}<span class="badge crit">Consenso scaduto</span>
+        {% elif c.status == 'errore' %}<span class="badge crit">Errore</span>
+        {% else %}<span class="badge warn">In attesa di autorizzazione</span>{% endif %}
+        {% if c.valid_until %} · consenso valido fino al {{ c.valid_until|d }}
+          {% set left = (c.valid_until - now).days %}{% if 0 <= left <= 14 %} <span class="badge warn">scade tra {{ left }} gg</span>{% endif %}{% endif %}
+        {% if c.last_sync_at %} · ultima sincronizzazione {{ c.last_sync_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+      </div>
+    </div>
+    <div class="toolbar" style="margin:0">
+      {% if c.status == 'attivo' %}<form method="post" action="/banche/{{ c.id }}/sincronizza"><button class="small">Sincronizza</button></form>{% endif %}
+      {% if c.session_id %}<a class="btn btn-small btn-ghost" href="/banche/{{ c.id }}/conti">Conti</a>{% endif %}
+      <form method="post" action="/banche/collega"><input type="hidden" name="aspsp" value="{{ c.aspsp_name }}"><input type="hidden" name="connection_id" value="{{ c.id }}">
+        <button class="small ghost" title="Rinnova il consenso PSD2 (va fatto ogni 90-180 giorni)">{{ 'Rinnova consenso' if c.session_id else 'Riprova autorizzazione' }}</button></form>
+      <form method="post" action="/banche/{{ c.id }}/elimina" data-confirm="Rimuovere il collegamento? Conti e movimenti già scaricati restano."><button class="small danger">Rimuovi</button></form>
+    </div>
+  </div>
+  {% if c.last_error %}<div class="alert err small">{{ c.last_error }}</div>{% endif %}
+  {% if c.accounts %}
+  <table class="small"><tbody>
+    {% for a in c.accounts %}<tr><td><span class="dot" style="background: {{ a.color }}"></span><a href="/movimenti?conto={{ a.id }}">{{ a.name }}</a></td><td>{{ a.iban }}</td><td>{{ a.kind_label }}</td></tr>{% endfor %}
+  </tbody></table>
+  {% elif c.session_id %}<p class="small">Nessun conto collegato: <a href="/banche/{{ c.id }}/conti">scegli i conti</a>.</p>{% endif %}
+</div>
+{% endfor %}
+
+{% if configured %}
+<div class="card">
+  <h2>Collega una banca</h2>
+  <form class="toolbar" method="get">
+    <select name="paese" onchange="this.form.submit()">{% for k, v in countries.items() %}<option value="{{ k }}" {{ 'selected' if k == paese }}>{{ v }}</option>{% endfor %}</select>
+    <select name="tipo" onchange="this.form.submit()">
+      <option value="business" {{ 'selected' if tipo == 'business' }}>Conto aziendale</option>
+      <option value="personal" {{ 'selected' if tipo == 'personal' }}>Conto personale</option>
+    </select>
+  </form>
+  {% if aspsp_error %}<div class="alert err small">{{ aspsp_error }}</div>{% endif %}
+  {% if aspsps %}
+  <form class="inline" method="post" action="/banche/collega">
+    <input type="hidden" name="country" value="{{ paese }}"><input type="hidden" name="psu_type" value="{{ tipo }}">
+    <div><label>Banca ({{ aspsps|length }} disponibili)</label>
+      <input name="aspsp" list="aspsp-list" required size="40" placeholder="Scrivi per cercare: Revolut, Vivid, BCC, Iccrea…">
+      <datalist id="aspsp-list">{% for a in aspsps %}<option value="{{ a.name }}">{% endfor %}</datalist></div>
+    <button>Vai alla banca per autorizzare →</button>
+  </form>
+  <p class="small muted" style="margin-top:8px">Verrai portato sul sito della banca per accedere e approvare la sola lettura di saldi e movimenti. Al termine torni qui.
+    Suggerimenti: <strong>Revolut</strong> è registrata in Lituania (prova sia Italia che Lituania); <strong>Vivid</strong> in Germania o Lussemburgo; per le <strong>BCC</strong> scegli la tua banca specifica (gruppo Iccrea o Cassa Centrale).</p>
+  {% endif %}
+  <details style="margin-top:10px"><summary>Il ritorno dalla banca non ha funzionato?</summary>
+    <p class="small">Copia l'indirizzo completo della pagina su cui sei arrivato dopo l'autorizzazione (contiene <code>code=</code>) e incollalo qui.</p>
+    <form class="inline" method="post" action="/banche/codice"><input name="url" size="60" required placeholder="https://…?state=…&code=…"><button class="ghost">Completa</button></form>
+  </details>
+</div>
+{% endif %}
+
+<details class="card" {{ 'open' if not configured }}>
+  <summary>Configurazione Enable Banking</summary>
+  <ol class="small">
+    <li>Crea un account gratuito su <a href="https://enablebanking.com/sign-in/" target="_blank" rel="noopener">enablebanking.com</a> ed entra nel Control Panel → <em>API applications</em>.</li>
+    <li>Registra una nuova applicazione in ambiente <strong>Production</strong>. Come redirect URL indica <code>{{ default_redirect }}</code>
+      (se non viene accettato, usa un indirizzo https qualsiasi e completa con "Il ritorno dalla banca non ha funzionato?").</li>
+    <li>Il browser scarica la <strong>chiave privata</strong> (<code>.pem</code>) con nome uguale all'Application ID: caricala qui sotto.</li>
+    <li>Nel Control Panel <strong>collega i tuoi conti</strong> all'applicazione ("Activate by linking accounts"): in modalità ristretta l'API restituisce solo i conti collegati lì.</li>
+  </ol>
+  <form method="post" action="/banche/configurazione" enctype="multipart/form-data">
+    <div class="form-grid">
+      <div class="field"><label>Application ID</label><input name="application_id" value="{{ app_id }}" placeholder="xxxxxxxx-xxxx-…"></div>
+      <div class="field"><label>Chiave privata (.pem){% if key_path %} – già caricata{% endif %}</label><input type="file" name="key_file" accept=".pem,.key"></div>
+      <div class="field"><label>Redirect URL registrato</label><input name="redirect_url" value="{{ redirect_url }}"></div>
+      <div class="field"><label>Sincronizza ogni (ore, 0 = solo manuale, min 6)</label><input type="number" min="0" name="sync_hours" value="{{ sync_hours }}"></div>
+      <div class="field"><label>Al primo collegamento scarica gli ultimi (giorni)</label><input type="number" min="1" max="730" name="initial_days" value="{{ initial_days }}"></div>
+    </div>
+    <button>Salva e verifica</button>
+  </form>
+  <p class="small muted" style="margin-top:8px">La chiave resta solo su questo computer (<code>{{ key_path or 'cartella dati/chiavi' }}</code>). La sincronizzazione automatica avviene mentre l'app è aperta.
+  Se un conto aveva già movimenti importati da file, l'Open Banking riprende dal giorno successivo all'ultimo movimento, così non si creano doppioni.</p>
+</details>
+{% endblock %}
