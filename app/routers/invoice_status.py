@@ -253,3 +253,11 @@ def export(vista: str = "pagare", session: Session = Depends(get_session)):
     name = f"fatture_{vista}_{date.today():%Y%m%d}.xlsx"
     return Response(buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.get("/controparte")
+def counterparty_page(request: Request, q: str = "", session: Session = Depends(get_session)):
+    from app.services import counterparty
+
+    led = counterparty.build(session, q) if q.strip() else None
+    return render(request, "counterparty.html", q=q, led=led)

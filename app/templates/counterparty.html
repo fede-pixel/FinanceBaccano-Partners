@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% from "_macros.html" import amount %}
+{% block title %}Scheda {{ q or 'cliente/fornitore' }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Scheda cliente / fornitore</h1>
+  <div class="muted">Fatture, incassi e pagamenti di una controparte: tornano i conti?</div></div>
+  <a href="/fatture/situazione">← Fatture da saldare</a>
+</div>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ q }}" placeholder="Nome (anche parziale), es. Barone" required autofocus>
+  <button>Cerca</button>
+</form>
+
+{% if led %}
+  {% if not led.names and not led.unlinked %}
+  <div class="alert warn">Nessuna fattura né movimento trovato per «{{ q }}». Prova con una parte del nome diversa.</div>
+  {% else %}
+  {% set incasso = 'incassato' if led.direction != 'passiva' else 'pagato' %}
+  {% if led.names %}<p class="small muted">Controparti trovate: {{ led.names|join(' · ') }}</p>{% endif %}
+
+  <div class="kpis">
+    <div class="kpi"><div class="label">Fatturato (IVA compresa)</div><div class="value">{{ led.invoiced|eur }}</div>
+      <div class="sub">{{ led.invoices|length }} documenti, note di credito sottratte</div></div>
+    <div class="kpi"><div class="label">{{ incasso|capitalize }} risultante dalla banca</div><div class="value">{{ (led.settled_by_movements + led.unlinked_total)|eur }}</div>
+      <div class="sub">{{ led.settled_by_movements|eur }} abbinati alle fatture{% if led.unlinked_total %} + {{ led.unlinked_total|eur }} non abbinati{% endif %}</div></div>
+    <div class="kpi"><div class="label">Residuo da {{ 'incassare' if led.direction != 'passiva' else 'pagare' }}</div>
+      <div class="value {{ 'neg' if led.residual < -100 }}">{{ led.residual|eur_sign if led.residual < 0 else led.residual|eur }}</div>
+      <div class="sub">fatturato − {{ incasso }}{% if led.settled_without_movement %} − {{ led.settled_without_movement|eur }} segnati saldati senza movimento{% endif %}</div></div>
+    <div class="kpi"><div class="label">Fatture ancora aperte</div><div class="value">{{ led.open_amount|eur }}</div>
+      <div class="sub">{% if led.difference|abs <= 100 %}<span class="pos">coincide con il residuo: i conti tornano</span>
+        {% elif led.unlinked_total and led.difference < 0 %}{{ led.unlinked_total|eur }} di movimenti col suo nome non sono abbinati a una fattura (acconti?): abbinali per chiudere le fatture
+        {% elif led.difference > 0 %}{{ led.difference|eur }} risultano saldati ma senza fattura aperta corrispondente: controlla note di credito e fatture segnate pagate
+        {% else %}il {{ incasso }} supera il fatturato di {{ (-led.difference)|eur }}: mancano fatture o ci sono pagamenti di altro{% endif %}</div></div>
+  </div>
+
+  <div class="card small">
+    <strong>Il conto:</strong> fatturato {{ led.invoiced|eur }} − {{ incasso }} dalla banca {{ led.collected|eur }}
+    ({{ led.settled_by_movements|eur }} abbinati{% if led.unlinked_total %} + {{ led.unlinked_total|eur }} non abbinati{% endif %})
+    {% if led.settled_without_movement %}− saldato senza movimento {{ led.settled_without_movement|eur }}{% endif %}
+    = residuo <strong>{{ led.residual|eur_sign }}</strong>.
+    <span class="muted">Gli importi sono IVA compresa, perché dalla banca passa il totale della fattura (al netto di eventuali ritenute).</span>
+  </div>
+
+  {% if led.invoices %}
+  <div class="card">
+    <h2>Fatture</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Data</th><th>Numero</th><th>Tipo</th><th>Stato</th><th>Movimenti</th><th class="num">Totale</th><th class="num">Aperto</th></tr></thead>
+      <tbody>{% for s in led.invoices %}{% set inv = s.invoice %}
+        <tr><td>{{ inv.date|d }}</td><td>{{ inv.number }}<div class="small muted">{{ inv.counterparty }}</div></td>
+          <td class="small">{{ inv.doc_type }} · {{ 'emessa' if inv.direction == 'attiva' else 'ricevuta' }}</td>
+          <td>{% if s.state == 'aperta' %}<span class="badge {{ 'crit' if s.overdue_days > 0 else 'info' }}">{{ 'scaduta' if s.overdue_days > 0 else 'aperta' }}</span>
+            {% elif s.state == 'pagata' %}<span class="badge good">saldata</span>{% elif s.state == 'compensata' %}<span class="badge">compensata</span>
+            {% else %}<span class="badge warn">saldata senza movimento</span>{% endif %}</td>
+          <td class="small">{% for t in s.transactions %}<div>{{ t.date|d }} · {{ t.amount_cents|eur_sign }}</div>{% else %}—{% endfor %}</td>
+          <td class="num">{{ inv.total_cents|eur }}</td><td class="num">{{ s.open_cents|eur if s.state == 'aperta' else '' }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </div>
+  {% endif %}
+
+  {% if led.unlinked %}
+  <div class="card">
+    <h2>Movimenti con questo nome non abbinati a fatture ({{ led.unlinked_total|eur }})</h2>
+    <p class="small muted">Probabili incassi o pagamenti di queste fatture (acconti, importi diversi, bonifici cumulativi). Abbinali da <a href="/fatture/situazione">Fatture da saldare</a> o da Riconciliazione per chiudere le fatture.</p>
+    <div class="table-wrap"><table class="small">
+      <thead><tr><th>Data</th><th>Conto</th><th>Descrizione</th><th class="num">Importo</th></tr></thead>
+      <tbody>{% for t in led.unlinked %}<tr><td>{{ t.date|d }}</td><td>{{ t.account.name }}</td><td>{{ t.description }}</td><td>{{ amount(t.amount_cents) }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+  {% endif %}
+  {% endif %}
+{% endif %}
+{% endblock %}

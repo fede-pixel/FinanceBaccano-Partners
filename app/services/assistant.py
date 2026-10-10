@@ -119,6 +119,18 @@ TOOLS = [
         },
     },
     {
+        "name": "scheda_controparte",
+        "description": "Scheda di un cliente o fornitore cercato per nome (anche parziale): fatture (IVA compresa), incassi o "
+                       "pagamenti abbinati, movimenti con il suo nome non ancora abbinati, importo aperto e differenza. "
+                       "Usala per domande come 'quanto abbiamo incassato da X?', 'tornano i conti con X?'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"nome": {"type": "string"}},
+            "required": ["nome"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "kpi_economici",
         "description": "KPI economici e finanziari mese per mese: ricavi e costi da fatture (netto IVA), personale, EBITDA "
                        "stimato e margine, entrate/uscite di cassa, liquidità a fine mese, autonomia di cassa, crediti e debiti "
@@ -317,6 +329,26 @@ def tool_sql(session: Session, query: str) -> dict:
     return {"colonne": cols, "righe": [list(r) for r in rows[:MAX_SQL_ROWS]], "troncato": len(rows) > MAX_SQL_ROWS}
 
 
+def tool_controparte(session: Session, nome: str) -> dict:
+    from app.services import counterparty
+
+    led = counterparty.build(session, nome)
+    return {
+        "controparti_trovate": led.names, "tipo": {"attiva": "cliente", "passiva": "fornitore"}.get(led.direction, led.direction),
+        "fatturato_iva_compresa": _eur(led.invoiced), "saldato_con_movimenti_abbinati": _eur(led.settled_by_movements),
+        "movimenti_col_nome_non_abbinati": _eur(led.unlinked_total), "saldato_senza_movimento": _eur(led.settled_without_movement),
+        "incassato_o_pagato_dalla_banca": _eur(led.collected), "residuo_reale": _eur(led.residual),
+        "fatture_ancora_aperte": _eur(led.open_amount), "differenza": _eur(led.difference),
+        "nota": "residuo_reale = fatturato − banca − saldato senza movimento. differenza = residuo_reale − fatture aperte: "
+                "0 = i conti tornano; negativa con movimenti non abbinati = acconti da abbinare alle fatture",
+        "fatture": [{"numero": s.invoice.number, "data": s.invoice.date.isoformat(), "tipo": s.invoice.doc_type,
+                     "totale": _eur(s.invoice.total_cents), "stato": s.state,
+                     "aperto": _eur(s.open_cents) if s.state == "aperta" else None} for s in led.invoices][:100],
+        "movimenti_non_abbinati": [f"{t.date.isoformat()} {t.account.name} {fmt_eur(t.amount_cents)} {t.description[:70]}"
+                                   for t in led.unlinked][:50],
+    }
+
+
 def tool_kpi(session: Session, mesi: int) -> dict:
     from app.services import kpi
 
@@ -369,6 +401,8 @@ def run_tool(session: Session, name: str, args: dict) -> str:
             out = tool_previsione(session, **args)
         elif name == "scadenze_documenti":
             out = tool_scadenze(session, **args)
+        elif name == "scheda_controparte":
+            out = tool_controparte(session, **args)
         elif name == "kpi_economici":
             out = tool_kpi(session, **args)
         elif name == "capacita_investimento":
