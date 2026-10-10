@@ -165,6 +165,7 @@ La pagina **Assistente AI** è una chat con Claude che conosce i dati dell'app: 
 - creare una regola di categoria (anche per IBAN);
 - segnare giroconti;
 - collegare un acconto a una fattura;
+- mettere in contenzioso un credito che non verrà incassato;
 - creare una ricorrenza.
 
 Le modifiche eseguite vengono comunicate all'assistente alla domanda successiva.

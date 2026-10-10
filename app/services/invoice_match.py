@@ -634,9 +634,13 @@ def partial_payment(session: Session, item: PlannedItem, amount_cents: int, paid
     paid = PlannedItem(
         title=f"{item.title} (pagamento parziale)", amount_cents=sign * amount_cents, due_date=paid_date,
         account_id=item.account_id, counterparty=item.counterparty, category=item.category, source=item.source,
-        invoice_id=item.invoice_id, status="pagato", paid_date=paid_date, settlement="manuale",
+        status="pagato", paid_date=paid_date, settlement="manuale",
         notes="Pagamento parziale registrato a mano",
     )
+    if item.invoice is not None:
+        item.invoice.planned_items.append(paid)  # tramite la relazione: la fattura vede subito la nuova voce
+    else:
+        paid.invoice_id = item.invoice_id
     session.add(paid)
     item.amount_cents -= sign * amount_cents
     session.flush()

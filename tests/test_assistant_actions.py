@@ -130,3 +130,28 @@ def test_proposals_then_user_executes(client, monkeypatch):
     client.post("/assistente/chiedi", data={"question": "Ricontrolla", "conv_id": str(conv_id)})
     last_user = fake2.calls[1]["messages"][-2]["content"]  # la lista è condivisa: l'ultima è la risposta
     assert "[Modifiche eseguite dall'utente nell'app:" in last_user and "Eliminata" in last_user
+
+
+def test_barone_advance_then_dispute(session):
+    """Acconto di 6.890 € su FPR 31/26, poi il resto di FPR 31/26 e tutta la FPR 39/26 in contenzioso."""
+    ids = _setup(session)
+    inv39 = Invoice(direction="attiva", doc_type="TD01", number="FPR 39/26", date=date(2026, 7, 20), counterparty="Simona Francesca Barone",
+                    total_cents=1_447_600, vat_cents=0, file_name="x", file_hash="b39")
+    session.add(inv39)
+    session.flush()
+    session.add(PlannedItem(title="Incasso FPR 39/26", amount_cents=1_447_600, due_date=date(2026, 8, 20), invoice_id=inv39.id, source="fattura"))
+    session.commit()
+    steps = [("proponi_acconto", {"movimento_id": ids["acc"], "fattura_id": ids["barone"]}),
+             ("proponi_contenzioso", {"fattura_id": ids["barone"], "nota": "legali"}),
+             ("proponi_contenzioso", {"fattura_id": inv39.id, "nota": "legali"})]
+    proposals = [aa.propose(session, n, a) for n, a in steps]
+    assert "acconto" in proposals[0]["summary"] and "23.355,75" in proposals[1]["summary"]  # prima dell'acconto
+    for p in proposals:
+        aa.execute(session, p)
+    session.commit()
+    from app.services import counterparty
+
+    led = counterparty.build(session, "Barone")
+    assert led.disputed == 2_335_575 - 689_000 + 1_447_600 == 3_094_175  # 30.941,75 €
+    assert led.open_amount == 0 and led.difference == 0
+    assert led.collected == 689_000

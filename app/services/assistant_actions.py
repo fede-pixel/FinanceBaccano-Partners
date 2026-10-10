@@ -203,6 +203,27 @@ def do_recurrence(session, titolo, importo, tipo, frequenza, giorno, inizio, con
     return desc.replace("Crea la ricorrenza", "Creata la ricorrenza")
 
 
+def check_dispute(session, fattura_id: int, nota: str) -> str:
+    inv = session.get(Invoice, fattura_id)
+    if inv is None:
+        raise ActionError(f"fattura {fattura_id} inesistente")
+    if inv.direction != "attiva":
+        raise ActionError("il contenzioso riguarda le fatture emesse (crediti verso clienti)")
+    items = [it for it in inv.planned_items if it.status == "previsto"]
+    if not items:
+        raise ActionError("la fattura non ha importi ancora da incassare (se c'è un acconto da collegare, proponilo prima)")
+    amount = sum(abs(it.amount_cents) for it in items)
+    return (f"Metti in contenzioso la {_inv_label(inv)}: {fmt_eur(amount)} non incassati escono da crediti, forecast e "
+            f"capacità di investimento (la fattura resta emessa)" + (f". Nota: {nota}" if nota else "") + ".")
+
+
+def do_dispute(session, fattura_id: int, nota: str) -> str:
+    desc = check_dispute(session, fattura_id, nota)
+    inv = session.get(Invoice, fattura_id)
+    invoice_match.set_dispute([it for it in inv.planned_items if it.status == "previsto"], nota.strip())
+    return desc.replace("Metti in contenzioso", "Messa in contenzioso")
+
+
 ACTIONS = {
     "proponi_elimina_fattura_doppia": (
         "Propone di eliminare UNA copia di una fattura caricata due volte (stesso numero, data, tipo e importo). "
@@ -222,6 +243,11 @@ ACTIONS = {
         "Propone di collegare un movimento a una fattura: pagamento completo se l'importo coincide, altrimenti acconto "
         "(la fattura resta aperta per il residuo).",
         {"movimento_id": {"type": "integer"}, "fattura_id": {"type": "integer"}}, check_advance, do_advance),
+    "proponi_contenzioso": (
+        "Propone di mettere in contenzioso una fattura emessa che il cliente non pagherà (pratica ai legali): il residuo "
+        "non incassato esce da crediti, forecast e investimenti. Se c'è un acconto, proponi PRIMA il collegamento "
+        "dell'acconto (proponi_acconto) e poi il contenzioso.",
+        {"fattura_id": {"type": "integer"}, "nota": {"type": "string"}}, check_dispute, do_dispute),
     "proponi_ricorrenza": (
         "Propone una spesa o entrata ricorrente (stipendi, F24, affitto, leasing, abbonamenti) per il forecast. "
         "Usa importi e giorni ricavati dallo storico dei movimenti e dillo all'utente.",
