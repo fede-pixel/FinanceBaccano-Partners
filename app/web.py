@@ -99,6 +99,7 @@ NAV = [
     ("Administration", [
         ("/documenti", "Scadenzario documenti"),
         ("/pacchetto", "Pacchetto commercialista"),
+        ("/commercialista/note", "Note per il commercialista"),
     ]),
     ("", [("/verifica", "Verifica dati"), ("/assistente", "Assistente AI"), ("/impostazioni", "Impostazioni"), ("/banche", "Open Banking (opzionale)")]),
 ]

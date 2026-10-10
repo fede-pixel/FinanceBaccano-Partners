@@ -42,6 +42,7 @@
   <div class="card">
     <h3>2 · Invia l'email</h3>
     <p class="small">Apre il tuo programma di posta con oggetto e testo già scritti: allega lo ZIP (o il link Drive) e invia.</p>
+    {% if pending_notes %}<p class="small">Nel testo ci sono anche <a href="/commercialista/note">{{ pending_notes|length }} note per il commercialista</a>.</p>{% endif %}
     <a class="btn" href="{{ mailto }}">Prepara email</a>
   </div>
   <div class="card">

@@ -143,9 +143,14 @@ def package(request: Request, mese: str = "", session: Session = Depends(get_ses
     email = get_setting(session, "accountant_email")
     company = get_setting(session, "company_name")
     subject = f"{company} – documenti {ad.period_label(mese)}"
+    from app.services import notes as ns
+
+    pending_notes = ns.pending(session)
+    notes_section = ns.section_for_package(pending_notes)
     body = (
         f"Buongiorno,\n\nin allegato (e nella cartella Drive condivisa) i documenti di {ad.period_label(mese)}.\n\n"
         + "\n".join(f"- {i.category.name}: {len(i.documents)} file" + (" (nessuna operazione)" if i.status == "non_applicabile" else "") for i in items)
+        + notes_section
         + "\n\nCordiali saluti"
     )
     mailto = f"mailto:{email}?subject={quote(subject)}&body={quote(body)}"
@@ -158,6 +163,7 @@ def package(request: Request, mese: str = "", session: Session = Depends(get_ses
         request, "package.html", items=items, mese=mese, months=months, period_label=ad.period_label,
         status_labels=ad.STATUS_LABELS, zip_path=zip_path, zip_exists=zip_path.exists(), mailto=mailto,
         packages_dir=ad.packages_root(session), missing=[i for i in items if i.status == "da_fare"],
+        pending_notes=pending_notes,
     )
 
 
@@ -184,7 +190,13 @@ def package_sent(mese: str = Form(...), session: Session = Depends(get_session))
     if not parse_month(mese):
         return redirect("/pacchetto", err="Mese non valido")
     ad.mark_sent(session, ad.package_items(session, mese))
-    return redirect(f"/pacchetto?mese={mese}", msg="Documenti segnati come inviati")
+    from app.services import notes as ns
+
+    pending_notes = ns.pending(session)
+    ns.mark_sent(pending_notes)  # erano nel testo dell'email del pacchetto
+    session.commit()
+    msg = "Documenti segnati come inviati" + (f", con {len(pending_notes)} note per il commercialista" if pending_notes else "")
+    return redirect(f"/pacchetto?mese={mese}", msg=msg)
 
 
 @router.post("/apri-cartella")

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Note per il commercialista{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Note per il commercialista</h1>
+  <div class="muted">Domande e punti da chiarire con lo studio: le scrivi tu o le salva l'Assistente AI, poi partono in un'unica email.</div></div>
+</div>
+
+{% if not email %}<div class="alert warn small">Imposta l'<a href="/impostazioni">email del commercialista</a> nelle Impostazioni.</div>{% endif %}
+
+<div class="card">
+  <h2>Da inviare ({{ todo|length }})</h2>
+  {% if todo %}
+  <form method="post" action="/commercialista/note/invia" id="sendform">
+    {% for n in todo %}
+    <div class="doc-row" style="grid-template-columns: auto 1fr auto">
+      <input type="checkbox" name="note_ids" value="{{ n.id }}" checked aria-label="Includi {{ n.title }}">
+      <div><strong>{{ n.title }}</strong> <span class="small muted">· {{ n.created_at.strftime('%d/%m/%Y') }}{% if n.source == 'assistente' %} · dall'Assistente AI{% endif %}</span>
+        <div class="small" style="white-space:pre-wrap">{{ n.body }}</div></div>
+      <a class="small" href="#modifica-{{ n.id }}">Modifica</a>
+    </div>
+    {% endfor %}
+    <div class="toolbar" style="margin-top:12px">
+      {% if smtp %}<button name="mode" value="smtp" {{ 'disabled' if not email }}>Invia al commercialista</button>
+      <span class="small muted">Parte subito dall'app a {{ email }}, con te in copia.</span>
+      {% else %}
+      <a class="btn" href="{{ mailto }}">Prepara email</a>
+      <button class="ghost" name="mode" value="segna">Segna come inviate</button>
+      <span class="small muted">Si apre il tuo programma di posta con il testo già scritto: invia e poi segna come inviate. (Per l'invio diretto dall'app vedi in fondo.)</span>
+      {% endif %}
+    </div>
+    <p class="small muted">Le note da inviare vengono aggiunte anche all'email del <a href="/pacchetto">Pacchetto commercialista</a> del mese.</p>
+  </form>
+  {% else %}<p class="muted">Nessuna nota da inviare.</p>{% endif %}
+</div>
+
+<details class="card" {{ 'open' if not todo }}>
+  <summary>+ Nuova nota</summary>
+  <form method="post" action="/commercialista/note/nuova">
+    <div class="field"><label>Domanda / argomento</label><input name="title" required placeholder="Es. Svalutazione crediti Barone"></div>
+    <div class="field"><label>Dettagli</label><textarea name="body" rows="4" placeholder="Importi, fatture, date utili allo studio"></textarea></div>
+    <button>Aggiungi</button>
+  </form>
+</details>
+
+{% for n in todo + sent %}
+<details class="card" id="modifica-{{ n.id }}">
+  <summary>{{ n.title }} <span class="small muted">· {{ {'da_inviare': 'da inviare', 'inviata': 'inviata il ' ~ (n.sent_at.strftime('%d/%m/%Y') if n.sent_at else ''), 'risolta': 'risolta'}[n.status] }}</span></summary>
+  <form method="post" action="/commercialista/note/{{ n.id }}/salva">
+    <div class="field"><label>Domanda / argomento</label><input name="title" value="{{ n.title }}" required></div>
+    <div class="field"><label>Dettagli</label><textarea name="body" rows="4">{{ n.body }}</textarea></div>
+    <div class="field"><label>Risposta del commercialista</label><textarea name="reply" rows="3" placeholder="Annota qui la risposta">{{ n.reply }}</textarea></div>
+    <div class="field"><label>Stato</label><select name="status">
+      {% for v, l in [('da_inviare', 'Da inviare'), ('inviata', 'Inviata, in attesa di risposta'), ('risolta', 'Risolta')] %}<option value="{{ v }}" {{ 'selected' if n.status == v }}>{{ l }}</option>{% endfor %}</select></div>
+    <div class="toolbar"><button>Salva</button></div>
+  </form>
+  <form method="post" action="/commercialista/note/{{ n.id }}/elimina" data-confirm="Eliminare la nota?"><button class="small danger">Elimina</button></form>
+</details>
+{% endfor %}
+
+{% if sent %}
+<div class="card">
+  <h2>Inviate e risolte</h2>
+  <table class="small"><thead><tr><th>Nota</th><th>Stato</th><th>Risposta</th></tr></thead><tbody>
+  {% for n in sent %}<tr><td><a href="#modifica-{{ n.id }}">{{ n.title }}</a></td>
+    <td>{% if n.status == 'risolta' %}<span class="badge good">Risolta</span>{% else %}<span class="badge info">Inviata {{ n.sent_at.strftime('%d/%m') if n.sent_at }}</span>{% endif %}</td>
+    <td>{{ n.reply[:120] if n.reply else '—' }}</td></tr>{% endfor %}
+  </tbody></table>
+</div>
+{% endif %}
+
+{% if not smtp %}
+<div class="card small">
+  <h3>Invio diretto dall'app (facoltativo)</h3>
+  <p>Per far partire l'email direttamente dall'app, senza aprire il programma di posta, aggiungi su Render → servizio → <em>Environment</em> le variabili
+  <code>FBP_SMTP_HOST</code> (es. smtp.gmail.com), <code>FBP_SMTP_PORT</code> (587), <code>FBP_SMTP_USER</code> (la tua email) e <code>FBP_SMTP_PASSWORD</code>.
+  Con Gmail serve una "password per le app" (Account Google → Sicurezza → Password per le app), non la password normale. Inseriscila solo su Render, mai in chat.</p>
+</div>
+{% endif %}
+{% endblock %}

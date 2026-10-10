@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal, init_engine
 from app.models import Transaction
-from app.routers import accounts, admin, analysis, assistant, banks, economics, dashboard, invoice_status, planning, settings, upload
+from app.routers import accounts, admin, analysis, assistant, banks, economics, notes, dashboard, invoice_status, planning, settings, upload
 from app.services.admin_docs import ensure_checklist, seed_categories
 from app.services.recurrence import sync_all
 
@@ -141,7 +141,7 @@ def create_app() -> FastAPI:
 
     # Dopo ogni modifica andata a buon fine (salvataggi, caricamenti, cancellazioni) si riallineano i dati collegati:
     # ricorrenze, categorie, giroconti, abbinamenti fatture/pagamenti, Excel per il commercialista.
-    NO_REFRESH = ("/login", "/logout", "/assistente/chiedi", "/impostazioni/backup", "/apri-cartella", "/pacchetto")
+    NO_REFRESH = ("/login", "/logout", "/assistente/chiedi", "/impostazioni/backup", "/apri-cartella", "/pacchetto", "/commercialista")
 
     @app.middleware("http")
     async def refresh_related(request: Request, call_next):
@@ -168,7 +168,7 @@ def create_app() -> FastAPI:
                 return PlainTextResponse("Richiesta bloccata: origine non locale", status_code=403)
         return await call_next(request)
 
-    for r in (auth, dashboard, upload, accounts, analysis, assistant, banks, economics, invoice_status, planning, admin, settings):
+    for r in (auth, dashboard, upload, accounts, analysis, notes, assistant, banks, economics, invoice_status, planning, admin, settings):
         app.include_router(r.router)
     return app
 

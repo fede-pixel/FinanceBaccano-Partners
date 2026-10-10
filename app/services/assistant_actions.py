@@ -224,6 +224,19 @@ def do_dispute(session, fattura_id: int, nota: str) -> str:
     return desc.replace("Metti in contenzioso", "Messa in contenzioso")
 
 
+def check_note(session, titolo: str, testo: str) -> str:
+    if not titolo.strip():
+        raise ActionError("titolo obbligatorio")
+    return f"Aggiungi alle note per il commercialista: «{titolo.strip()}» — {testo.strip()[:300]}"
+
+
+def do_note(session, titolo: str, testo: str) -> str:
+    from app.services import notes
+
+    notes.create(session, titolo, testo, source="assistente")
+    return f"Nota salvata per il commercialista: «{titolo.strip()}» (la trovi in Note per il commercialista)"
+
+
 ACTIONS = {
     "proponi_elimina_fattura_doppia": (
         "Propone di eliminare UNA copia di una fattura caricata due volte (stesso numero, data, tipo e importo). "
@@ -248,6 +261,13 @@ ACTIONS = {
         "non incassato esce da crediti, forecast e investimenti. Se c'è un acconto, proponi PRIMA il collegamento "
         "dell'acconto (proponi_acconto) e poi il contenzioso.",
         {"fattura_id": {"type": "integer"}, "nota": {"type": "string"}}, check_dispute, do_dispute),
+    "proponi_nota_commercialista": (
+        "Prepara una nota per il commercialista ogni volta che consigli di chiedergli qualcosa (fiscale, bilancio, IVA, "
+        "svalutazioni, contratti, adempimenti). Il testo deve essere autonomo e pronto da inviare: domanda chiara, con "
+        "importi, numeri di fattura, date e controparti, senza riferimenti all'app o alla chat.",
+        {"titolo": {"type": "string", "description": "Breve, es. 'Svalutazione crediti Barone'"},
+         "testo": {"type": "string", "description": "La domanda per lo studio, con i dati necessari"}},
+        check_note, do_note),
     "proponi_ricorrenza": (
         "Propone una spesa o entrata ricorrente (stipendi, F24, affitto, leasing, abbonamenti) per il forecast. "
         "Usa importi e giorni ricavati dallo storico dei movimenti e dillo all'utente.",

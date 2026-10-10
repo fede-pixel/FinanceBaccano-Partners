@@ -296,3 +296,19 @@ class ChatConversation(Base):
     display: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class AccountantNote(Base):
+    """Domanda o punto da sottoporre al commercialista (scritta a mano o salvata dall'assistente)."""
+
+    __tablename__ = "accountant_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(20), default="manuale")  # manuale | assistente
+    conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="da_inviare")  # da_inviare | inviata | risolta
+    reply: Mapped[str] = mapped_column(Text, default="")  # risposta del commercialista
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

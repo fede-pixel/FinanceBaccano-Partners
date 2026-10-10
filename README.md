@@ -172,6 +172,16 @@ Le modifiche eseguite vengono comunicate all'assistente alla domanda successiva.
 
 Le conversazioni restano salvate e si possono riprendere o eliminare.
 
+## Note per il commercialista
+
+La pagina **Note per il commercialista** raccoglie le domande da fare allo studio:
+- **Da dove arrivano:** le scrivi tu, oppure le prepara l'Assistente AI ogni volta che consiglia di chiedere qualcosa al commercialista. La nota è pronta da inviare, con importi, fatture e date, e la salvi con "Salva nota". Puoi anche salvare un'intera risposta con "Salva come nota per il commercialista".
+- **Invio:**
+  - **Prepara email:** si apre il tuo programma di posta con il testo già scritto.
+  - **Invia al commercialista:** l'email parte direttamente dall'app, con te in copia, se su Render sono impostate le variabili `FBP_SMTP_HOST`, `FBP_SMTP_PORT`, `FBP_SMTP_USER`, `FBP_SMTP_PASSWORD` (per Gmail serve una "password per le app").
+- **Pacchetto mensile:** le note da inviare entrano anche nell'email del pacchetto e risultano inviate insieme ai documenti.
+- **Archivio:** per ogni nota puoi annotare la risposta dello studio e segnarla come risolta.
+
 ## Analisi spese
 
 Ogni movimento riceve in automatico una categoria (Software e abbonamenti, Carburante e trasporti, Tasse e contributi, Ristoranti e bar…) in base alle parole della descrizione e della controparte. La pagina **Analisi spese** mostra un grafico a barre delle uscite per categoria, con percentuali, dettaglio per fornitore e filtro per periodo e conto. I giroconti tra conti propri e le entrate sono esclusi.
