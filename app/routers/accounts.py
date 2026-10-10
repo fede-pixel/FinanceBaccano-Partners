@@ -137,9 +137,18 @@ def movements(
     mese: str = "",
     q: str = "",
     da_abbinare: int = 0,
+    categoria: str = "",
+    da: str = "",
+    a: str = "",
     session: Session = Depends(get_session),
 ):
     stmt = select(Transaction).order_by(Transaction.date.desc(), Transaction.id.desc())
+    if categoria:
+        stmt = stmt.where(Transaction.category == categoria)
+    if parse_date(da):
+        stmt = stmt.where(Transaction.date >= parse_date(da))
+    if parse_date(a):
+        stmt = stmt.where(Transaction.date <= parse_date(a))
     if conto:
         stmt = stmt.where(Transaction.account_id == conto)
     if mese:
@@ -160,8 +169,19 @@ def movements(
     tot_out = sum(t.amount_cents for t in rows if t.amount_cents < 0)
     return render(
         request, "movements.html", rows=rows, accounts=accounts, conto=conto, mese=mese, q=q,
-        da_abbinare=da_abbinare, tot_in=tot_in, tot_out=tot_out,
+        da_abbinare=da_abbinare, tot_in=tot_in, tot_out=tot_out, categoria=categoria, da=da, a=a,
+        categories=_category_names(session),
     )
+
+
+def _category_names(session: Session) -> list[str]:
+    from app.models import CategoryRule
+    from app.services.categorize import CATEGORIES, INCOME
+
+    custom = set(session.scalars(select(CategoryRule.category).distinct())) | set(
+        c for c in session.scalars(select(Transaction.category).distinct()) if c
+    )
+    return CATEGORIES + [INCOME] + sorted(custom - set(CATEGORIES) - {INCOME})
 
 
 @router.post("/movimenti/nuovo")
@@ -181,22 +201,42 @@ def movement_add(
         return redirect("/movimenti", err="Data o importo non validi")
     cents = abs(cents) if direction == "entrata" else -abs(cents)
     key = hashlib.sha256(f"manuale|{uuid.uuid4()}".encode()).hexdigest()[:40]
-    session.add(
-        Transaction(
-            account_id=account_id, date=d, amount_cents=cents, description=description.strip(),
-            counterparty=counterparty.strip(), category=category.strip(), source="manuale", dedupe_key=key,
-        )
+    tx = Transaction(
+        account_id=account_id, date=d, amount_cents=cents, description=description.strip(),
+        counterparty=counterparty.strip(), category=category.strip(), source="manuale", dedupe_key=key,
+        category_source="manuale" if category.strip() else "",
     )
+    session.add(tx)
+    if not category.strip():
+        from app.services.categorize import apply as categorize
+
+        categorize(session, [tx])
     session.commit()
     return redirect(f"/movimenti?conto={account_id}", msg="Movimento registrato")
 
 
 @router.post("/movimenti/{tx_id}/categoria")
-def movement_category(tx_id: int, category: str = Form(""), session: Session = Depends(get_session)):
+def movement_category(
+    tx_id: int, category: str = Form(""), back: str = Form(""), session: Session = Depends(get_session)
+):
+    """Correzione manuale: la regola che ne nasce si applica anche ai movimenti simili."""
+    from app.services import categorize
+
     tx = session.get(Transaction, tx_id) or _404()
-    tx.category = category.strip()
-    session.commit()
-    return redirect(f"/movimenti?conto={tx.account_id}")
+    back = back if back.startswith("/") else f"/movimenti?conto={tx.account_id}"
+    category = category.strip()
+    if not category:  # torna alla categoria automatica
+        tx.category_source = ""
+        categorize.apply(session, [tx])
+        session.commit()
+        return redirect(back, msg=f"Categoria automatica: {tx.category}")
+    key, updated = categorize.learn(session, tx, category)
+    msg = f"Categoria '{category}' salvata"
+    if key:
+        msg += f". Regola creata: «{key}» → {category}"
+        if updated:
+            msg += f" (aggiornati altri {updated} movimenti)"
+    return redirect(back, msg=msg)
 
 
 @router.post("/movimenti/{tx_id}/elimina")

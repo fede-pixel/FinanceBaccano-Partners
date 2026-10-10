@@ -25,6 +25,7 @@ NAV = [
         ("/", "Dashboard"),
         ("/carica", "Caricamento settimanale"),
         ("/forecast", "Forecast"),
+        ("/analisi", "Analisi spese"),
         ("/previsti", "Entrate e uscite previste"),
         ("/movimenti", "Movimenti"),
         ("/riconciliazione", "Riconciliazione"),

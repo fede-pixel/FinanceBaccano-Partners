@@ -100,6 +100,8 @@ class Transaction(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     counterparty: Mapped[str] = mapped_column(String(200), default="")
     category: Mapped[str] = mapped_column(String(100), default="")
+    # "auto" = assegnata dalle regole (può essere ricalcolata), "manuale" = scelta da te (mai sovrascritta)
+    category_source: Mapped[str] = mapped_column(String(10), default="")
     source: Mapped[str] = mapped_column(String(20), default="manuale")
     dedupe_key: Mapped[str] = mapped_column(String(64))
     import_batch: Mapped[str] = mapped_column(String(40), default="")
@@ -242,6 +244,19 @@ class Document(Base):
     @property
     def file_name(self) -> str:
         return PurePath(self.stored_path.replace("\\", "/")).name
+
+
+class CategoryRule(Base):
+    """Se descrizione o controparte contengono `pattern`, il movimento va in `category`."""
+
+    __tablename__ = "category_rules"
+    __table_args__ = (UniqueConstraint("pattern"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pattern: Mapped[str] = mapped_column(String(100))
+    category: Mapped[str] = mapped_column(String(100))
+    priority: Mapped[int] = mapped_column(Integer, default=100)  # più basso = valutata prima
+    source: Mapped[str] = mapped_column(String(10), default="base")  # base | tua
 
 
 class Setting(Base):

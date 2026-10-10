@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Analisi spese{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Dove spendiamo – {{ title }}</h1>
+  <div class="muted">Uscite raggruppate per categoria, assegnata in automatico in base alla descrizione del movimento. Giroconti ed entrate sono esclusi.</div></div>
+</div>
+
+<form class="toolbar" method="get">
+  <select name="periodo" onchange="this.form.mese.value='';this.form.submit()">
+    {% for k, l in periods.items() %}<option value="{{ k }}" {{ 'selected' if periodo == k and not mese }}>{{ l }}</option>{% endfor %}
+  </select>
+  <input type="month" name="mese" value="{{ mese }}" onchange="this.form.submit()" title="Oppure scegli un mese preciso">
+  <select name="conto" onchange="this.form.submit()">
+    <option value="0">Tutti i conti e carte</option>
+    {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if conto == a.id }}>{{ a.name }}</option>{% endfor %}
+  </select>
+</form>
+
+<div class="kpis">
+  <div class="kpi"><div class="label">Uscite del periodo</div><div class="value">{{ report.total|eur }}</div>
+    <div class="sub">{{ report.categories|sum(attribute='count') }} movimenti</div></div>
+  {% set top = report.categories|rejectattr('category', 'equalto', 'Altro')|first %}
+  <div class="kpi"><div class="label">Prima voce di spesa</div>
+    <div class="value" style="font-size:18px">{{ top.category if top else '—' }}</div>
+    <div class="sub">{% if top %}{{ top.total|eur }} · {{ (top.share * 100)|round(1) }}%{% endif %}</div></div>
+  <div class="kpi"><div class="label">Entrate del periodo</div><div class="value">{{ report.income|eur }}</div><div class="sub">escluse dall'analisi</div></div>
+  <div class="kpi"><div class="label">Non classificato ("Altro")</div><div class="value">{{ (report.uncategorized_share * 100)|round(1) }}%</div>
+    <div class="sub">{% if report.uncategorized_share > 0.15 %}correggi qualche movimento per insegnare all'app{% else %}margine accettabile{% endif %}</div></div>
+</div>
+
+{% if report.categories %}
+<div class="grid grid-2" style="align-items:start">
+  <div class="card">
+    <h2>Uscite per categoria</h2>
+    <script type="application/json" id="spending-data">{{ chart|safe }}</script>
+    <div data-spending="spending-data" class="chart-box" style="height: {{ 60 + report.categories|length * 34 }}px">
+      <canvas aria-label="Uscite per categoria" role="img"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Dettaglio</h2>
+    <table>
+      <thead><tr><th>Categoria</th><th class="num">Totale</th><th class="num">%</th><th class="num">Mov.</th></tr></thead>
+      <tbody>
+      {% for c in report.categories %}
+        <tr>
+          <td><details><summary style="color: var(--ink); font-weight: 500">{{ c.category }}</summary>
+            <div class="small muted">{% for name, tot, n in c.merchants %}<div>{{ name }} – {{ tot|eur }} ({{ n }})</div>{% endfor %}
+            <a href="/movimenti?categoria={{ c.category|urlencode }}&da={{ da }}&a={{ a }}{{ '&conto=%d'|format(conto) if conto }}">vedi i movimenti →</a></div>
+          </details></td>
+          <td class="num">{{ c.total|eur }}</td>
+          <td class="num">{{ (c.share * 100)|round(1) }}</td>
+          <td class="num">{{ c.count }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>I 10 fornitori su cui spendiamo di più</h2>
+  <table>
+    <thead><tr><th>Fornitore / controparte</th><th>Categoria</th><th class="num">Totale</th><th class="num">Mov.</th></tr></thead>
+    <tbody>
+    {% for name, cat, tot, n in report.top_merchants %}
+      <tr><td>{{ name }}</td><td class="small">{{ cat }}</td><td class="num">{{ tot|eur }}</td><td class="num">{{ n }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card empty">Nessuna uscita nel periodo. Carica i movimenti dal <a href="/carica">Caricamento settimanale</a>.</div>
+{% endif %}
+
+<details class="card">
+  <summary>Regole di categorizzazione ({{ my_rules|length }} tue + {{ base_rules }} di base)</summary>
+  <p class="small">Il modo più semplice per insegnare all'app è correggere la categoria di un movimento in <a href="/movimenti">Movimenti</a>: viene creata una regola e applicata a tutti i movimenti simili. Puoi anche aggiungerle qui.</p>
+  <form class="inline" method="post" action="/analisi/regole">
+    <div><label>Se la descrizione contiene</label><input name="pattern" required placeholder="es. esselunga"></div>
+    <div><label>allora la categoria è</label><input name="category" required list="cat-list2" placeholder="es. Acquisti e forniture"></div>
+    <datalist id="cat-list2">{% for c in categories %}<option value="{{ c }}">{% endfor %}</datalist>
+    <button>Aggiungi regola</button>
+  </form>
+  {% if my_rules %}
+  <table class="small" style="margin-top:12px">
+    <thead><tr><th>Parole chiave</th><th>Categoria</th><th></th></tr></thead>
+    <tbody>
+    {% for r in my_rules %}
+      <tr><td>{{ r.pattern }}</td><td>{{ r.category }}</td>
+        <td class="actions"><form method="post" action="/analisi/regole/{{ r.id }}/elimina" data-confirm="Eliminare la regola?"><button class="small danger">×</button></form></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  <form method="post" action="/analisi/ricalcola" style="margin-top:12px"><button class="small ghost">Ricalcola le categorie automatiche</button></form>
+</details>
+{% endblock %}

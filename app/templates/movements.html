@@ -13,6 +13,11 @@
     {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if conto == a.id }}>{{ a.name }}</option>{% endfor %}
   </select>
   <input type="month" name="mese" value="{{ mese }}" onchange="this.form.submit()">
+  <select name="categoria" onchange="this.form.submit()">
+    <option value="">Tutte le categorie</option>
+    {% for c in categories %}<option {{ 'selected' if c == categoria }}>{{ c }}</option>{% endfor %}
+  </select>
+  {% if da or a %}<input type="hidden" name="da" value="{{ da }}"><input type="hidden" name="a" value="{{ a }}"><span class="badge plain">dal {{ da }} al {{ a }}</span>{% endif %}
   <input type="search" name="q" value="{{ q }}" placeholder="Cerca descrizione…">
   <label class="check"><input type="checkbox" name="da_abbinare" value="1" {{ 'checked' if da_abbinare }} onchange="this.form.submit()"> Solo non abbinati</label>
   <button class="ghost">Filtra</button>
@@ -29,11 +34,12 @@
     <div><label>Importo (€)</label><input name="amount" required size="10"></div>
     <div><label>Descrizione</label><input name="description" size="28"></div>
     <div><label>Controparte</label><input name="counterparty"></div>
-    <div><label>Categoria</label><input name="category" size="12"></div>
+    <div><label>Categoria (vuoto = automatica)</label><input name="category" size="14" list="cat-list"></div>
     <button>Registra</button>
   </form>
 </details>
 
+<datalist id="cat-list">{% for c in categories %}<option value="{{ c }}">{% endfor %}</datalist>
 <div class="card">
   <div class="toolbar small">
     <span>{{ rows|length }} movimenti</span>
@@ -50,7 +56,12 @@
         <td style="white-space:nowrap">{{ t.date|d }}</td>
         <td class="small">{{ t.account.name }}</td>
         <td>{{ t.description }}{% if t.counterparty %}<div class="small muted">{{ t.counterparty }}</div>{% endif %}</td>
-        <td><form method="post" action="/movimenti/{{ t.id }}/categoria"><input name="category" value="{{ t.category }}" size="10" onchange="this.form.submit()"></form></td>
+        <td><form method="post" action="/movimenti/{{ t.id }}/categoria">
+          <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
+          <input name="category" value="{{ t.category }}" size="16" list="cat-list" onchange="this.form.submit()"
+            title="{{ 'Scelta da te' if t.category_source == 'manuale' else 'Assegnata in automatico: correggila e l\'app imparerà per i movimenti simili' }}"
+            style="{{ 'font-weight:600' if t.category_source == 'manuale' else 'color: var(--ink-2)' }}">
+        </form></td>
         <td class="small">{% if t.planned_item %}<a href="/previsti/{{ t.planned_item.id }}">{{ t.planned_item.title }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
         <td>{{ amount(t.amount_cents) }}</td>
         <td class="actions">

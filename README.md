@@ -85,6 +85,12 @@ Pagina **Open Banking (opzionale)**: saldi e movimenti si scaricano da soli (PSD
 
 Se un conto aveva già movimenti importati da file, la sincronizzazione riparte dal giorno successivo all'ultimo movimento: niente doppioni.
 
+## Analisi spese
+
+Ogni movimento riceve in automatico una categoria (Software e abbonamenti, Carburante e trasporti, Tasse e contributi, Ristoranti e bar…) in base alle parole della descrizione e della controparte. La pagina **Analisi spese** mostra un grafico a barre delle uscite per categoria, con percentuali, dettaglio per fornitore e filtro per periodo e conto. I giroconti tra conti propri e le entrate sono esclusi.
+
+Quando una categoria è sbagliata, correggila in **Movimenti**: l'app crea una regola e la applica a tutti i movimenti dello stesso fornitore, presenti e futuri. Le categorie scelte a mano non vengono mai sovrascritte.
+
 ## Come funziona il forecast
 
 - **Saldo di un conto** = ultimo *saldo certo* (inserito a mano, oppure letto dalla colonna saldo del file importato) + movimenti successivi.

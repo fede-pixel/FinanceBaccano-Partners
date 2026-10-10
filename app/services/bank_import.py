@@ -543,11 +543,12 @@ def import_transactions(
         session.scalars(select(Transaction.dedupe_key).where(Transaction.account_id == account.id, Transaction.dedupe_key.in_(keys)))
     )
     inserted = 0
+    new_txs: list[Transaction] = []
     for t, k in zip(txs, keys):
         if k in existing:
             continue
         existing.add(k)
-        session.add(
+        new_txs.append(
             Transaction(
                 account_id=account.id,
                 date=t.date,
@@ -559,7 +560,12 @@ def import_transactions(
                 import_batch=batch,
             )
         )
+        session.add(new_txs[-1])
         inserted += 1
+    if new_txs:
+        from app.services.categorize import apply as categorize
+
+        categorize(session, new_txs)
     snap = closing_balance(txs) if update_balance else None
     if snap:
         row = session.scalar(select(BalanceSnapshot).where(BalanceSnapshot.account_id == account.id, BalanceSnapshot.date == snap[0]))

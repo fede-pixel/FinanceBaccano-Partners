@@ -128,7 +128,34 @@
     });
   }
 
+  function spendingChart(canvas, data) {
+    const opts = baseOptions();
+    opts.indexAxis = "y";
+    opts.interaction = { mode: "nearest", axis: "y", intersect: false };
+    opts.plugins.tooltip.callbacks = {
+      title: (items) => items[0].label,
+      label: (ctx) => ` ${eur.format(ctx.raw)} · ${data.shares[ctx.dataIndex]}% · ${data.counts[ctx.dataIndex]} movimenti`,
+    };
+    opts.scales = {
+      x: { grid: { color: css("--grid") }, border: { display: false }, ticks: { color: css("--muted"), callback: (v) => eurShort.format(v) + " €" } },
+      y: { grid: { display: false }, border: { color: css("--axis") }, ticks: { color: css("--ink-2"), autoSkip: false } },
+    };
+    return new Chart(canvas, {
+      type: "bar",
+      data: { labels: data.labels, datasets: [{ label: "Uscite", data: data.values, backgroundColor: css("--series-actual"), borderRadius: 4, barThickness: 18 }] },
+      options: opts,
+    });
+  }
+
   function initCharts() {
+    document.querySelectorAll("[data-spending]").forEach((el) => {
+      const data = JSON.parse(document.getElementById(el.dataset.spending).textContent);
+      let chart = spendingChart(el.querySelector("canvas"), data);
+      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+        chart.destroy();
+        chart = spendingChart(el.querySelector("canvas"), data);
+      });
+    });
     document.querySelectorAll("[data-forecast]").forEach((el) => {
       const data = JSON.parse(document.getElementById(el.dataset.forecast).textContent);
       const charts = [];

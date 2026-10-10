@@ -9,8 +9,11 @@ from fastapi.staticfiles import StaticFiles
 
 from app import auth, config
 from app.backup import run_backup
+from sqlalchemy import select
+
 from app.db import SessionLocal, init_engine
-from app.routers import accounts, admin, banks, dashboard, planning, settings, upload
+from app.models import Transaction
+from app.routers import accounts, admin, analysis, banks, dashboard, planning, settings, upload
 from app.services.admin_docs import ensure_checklist, seed_categories
 from app.services.recurrence import sync_all
 
@@ -25,6 +28,11 @@ def bootstrap(db_path=None) -> None:
         seed_categories(session)
         ensure_checklist(session)
         sync_all(session)
+        from app.services import categorize
+
+        categorize.seed_rules(session)
+        if categorize.apply(session, list(session.scalars(select(Transaction).where(Transaction.category_source == "")))):
+            session.commit()
 
 
 def _sync_banks_job() -> None:
@@ -125,7 +133,7 @@ def create_app() -> FastAPI:
                 return PlainTextResponse("Richiesta bloccata: origine non locale", status_code=403)
         return await call_next(request)
 
-    for r in (auth, dashboard, upload, accounts, banks, planning, admin, settings):
+    for r in (auth, dashboard, upload, accounts, analysis, banks, planning, admin, settings):
         app.include_router(r.router)
     return app
 
