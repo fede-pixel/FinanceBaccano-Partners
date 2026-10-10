@@ -330,7 +330,9 @@ async def import_preview(token: str, request: Request, conto: int = 0, session: 
         profile = _profile_from_form(form)
     else:
         saved = ImportProfile.from_json(account.csv_profile)
-        profile = saved if saved and saved.header_row < len(rows) else guess_profile(rows)
+        # la mappatura salvata vale solo se il file ha le stesse colonne (stesso formato della banca)
+        fits = saved and saved.header_row < len(rows) and saved.date_col in rows[saved.header_row]
+        profile = saved if fits else guess_profile(rows)
     header = rows[profile.header_row] if rows else []
     parsed, errors = parse_rows(rows, profile) if profile.date_col else ([], ["Scegli la colonna della data"])
     return render(

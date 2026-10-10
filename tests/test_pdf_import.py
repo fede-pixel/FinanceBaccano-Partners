@@ -185,3 +185,48 @@ def test_error_message_shows_raw_amount():
     rows = [["Data", "Descrizione", "Importo"], ["01/10/2026", "x", "n.d."], ["02/10/2026", "y", ""]]
     _, errors = parse_rows(rows, guess_profile(rows))
     assert errors == ["Riga 2: importo non riconosciuto ('n.d.')", "Riga 3: importo non riconosciuto (cella vuota)"]
+
+
+def test_revolut_italian_pdf_layout():
+    """Come l'estratto Revolut in italiano: intestazione in grassetto su altezze leggermente diverse,
+    data seguita dalla sigla (CAR/FEE), importi '€90.00', colonne Soldi in uscita / in entrata, più recenti in alto."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    c.setFont("Helvetica", 9)
+    c.drawString(40, 800, "00015   Valuta   EUR")
+    c.drawString(40, 785, "Italy   Tipo IBAN BIC   Locale LT40 3250 0643 3460 6142 REVOLT21")
+    heads = [(40, "Data", 0), (130, "Descrizione", 2.5), (330, "Soldi in uscita", 1), (420, "Soldi in entrata", 1), (510, "Saldo", 0)]
+    for x, h, dy in heads:
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(x, 750 + dy, h)
+    c.setFont("Helvetica", 9)
+    rows = [("28 set 2026", "CAR", "Anthropic* Claude Sub", "€90.00", "", "€59.33"),
+            ("23 set 2026", "FEE", "Commissione Revolut Business", "€10.00", "", "€149.33"),
+            ("20 set 2026", "TRA", "Bonifico da Cliente Rossi", "", "€1,000.00", "€159.33")]
+    y = 725
+    for d, kind, desc, out_, in_, bal in rows:
+        c.drawString(40, y, f"{d} {kind}")
+        c.drawString(130, y, desc)
+        if out_:
+            c.drawRightString(395, y, out_)
+        if in_:
+            c.drawRightString(490, y, in_)
+        c.drawRightString(560, y, bal)
+        y -= 22
+    c.save()
+    rows_ = read_table(buf.getvalue(), "revolut.pdf")
+    p = guess_profile(rows_)
+    assert p.date_col == "Data" and p.amount_mode == "split", (rows_[:5], p)
+    assert (p.in_col, p.out_col) == ("Soldi in entrata", "Soldi in uscita")
+    txs, errors = parse_rows(rows_, p)
+    assert [(t.date.day, t.amount_cents) for t in txs] == [(28, -9000), (23, -1000), (20, 100000)] and not errors
+
+
+def test_sign_inferred_from_balance():
+    rows = [["Data", "Descrizione", "Importo", "Saldo"],
+            ["28/09/2026", "Claude", "90,00", "59,33"],
+            ["23/09/2026", "Commissione", "10,00", "149,33"],
+            ["20/09/2026", "Cliente", "1.000,00", "159,33"],
+            ["19/09/2026", "Apertura", "100,00", "-840,67"]]
+    txs, _ = parse_rows(rows, guess_profile(rows))
+    assert [t.amount_cents for t in txs] == [-9000, -1000, 100000, 10000]

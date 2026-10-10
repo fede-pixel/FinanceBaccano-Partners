@@ -152,7 +152,7 @@ class UnreadableFile(ValueError):
 TABLE_EXTENSIONS = (".csv", ".txt", ".xlsx", ".xlsm", ".xls", ".pdf")
 
 
-_HEADER_HINT = re.compile(r"\b(data|date|datum|buchungstag|valuta)\b", re.I)
+_HEADER_HINT = re.compile(r"\b(data|date|datum|buchungstag)\b", re.I)
 
 
 def _starts_with_date(text: str) -> bool:
@@ -163,11 +163,19 @@ def _pdf_lines(page) -> list[list[dict]]:
     """Parole della pagina raggruppate per riga (stessa altezza), ordinate da sinistra a destra."""
     words = sorted(page.extract_words(keep_blank_chars=False, x_tolerance=1.5), key=lambda w: (round(w["top"]), w["x0"]))
     lines: list[list[dict]] = []
+    bounds: list[list[float]] = []  # [top, bottom] di ogni riga
     for w in words:
-        if lines and abs(lines[-1][0]["top"] - w["top"]) <= 3:
-            lines[-1].append(w)
-        else:
-            lines.append([w])
+        if lines:
+            top, bottom = bounds[-1]
+            overlap = min(bottom, w["bottom"]) - max(top, w["top"])
+            height = min(bottom - top, w["bottom"] - w["top"]) or 1
+            # stessa riga se le parole si sovrappongono in verticale per oltre metà altezza
+            # (i caratteri in grassetto o di corpo diverso hanno "top" leggermente diversi)
+            if overlap / height > 0.5:
+                lines[-1].append(w)  # i limiti restano quelli della prima parola: la riga non "cresce"
+                continue
+        lines.append([w])
+        bounds.append([w["top"], w["bottom"]])
     return [sorted(ln, key=lambda w: w["x0"]) for ln in lines]
 
 
@@ -350,8 +358,8 @@ def _read_table(content: bytes, filename: str) -> list[list[str]]:
 _KEYWORDS = {
     "date_col": ["data contabile", "data operazione", "date completed", "completed date", "data valuta", "data", "date"],
     "amount_col": ["importo", "total amount", "amount", "importo (eur)", "importo eur"],
-    "in_col": ["avere", "entrate", "accrediti", "money in", "credit"],
-    "out_col": ["dare", "uscite", "addebiti", "money out", "debit"],
+    "in_col": ["avere", "entrate", "accrediti", "money in", "credit", "soldi in entrata", "in entrata", "entrata", "eingang", "gutschrift"],
+    "out_col": ["dare", "uscite", "addebiti", "money out", "debit", "soldi in uscita", "in uscita", "uscita", "ausgang", "lastschrift"],
     "desc_cols": ["descrizione", "causale", "description", "reference", "dettagli", "descrizione operazione"],
     "counterparty_col": ["controparte", "beneficiario", "payer", "payee", "merchant", "ordinante", "counterparty"],
     "id_col": ["id", "transaction id", "id transazione"],
@@ -425,7 +433,7 @@ def parse_date_value(value: str, fmt: str = "auto") -> date | None:
         except ValueError:
             continue
     if fmt != "auto":
-        return None
+        return _text_date(value)
     # Excel a volte esporta il numero seriale
     if re.fullmatch(r"\d{5}(\.\d+)?", value):
         return date(1899, 12, 30) + timedelta(days=int(float(value)))
@@ -489,7 +497,26 @@ def parse_rows(rows: list[list[str]], p: ImportProfile) -> tuple[list[ParsedTx],
                 row_index=n,
             )
         )
+    if p.amount_mode == "single" and not p.invert_sign:
+        _signs_from_balance(out)
     return out, errors
+
+
+def _signs_from_balance(txs: list[ParsedTx]) -> None:
+    """Se gli importi sono tutti positivi (es. PDF con colonne separate non riconosciute) ma c'è il saldo,
+    il segno si ricava dalla variazione del saldo tra un movimento e il successivo."""
+    if not txs or any(t.amount_cents < 0 for t in txs):
+        return
+    with_bal = [t for t in txs if t.balance_cents is not None]
+    if len(with_bal) < max(2, len(txs) // 2):
+        return
+    ordered = sorted(with_bal, key=lambda t: t.row_index)
+    descending = ordered[0].date > ordered[-1].date  # estratti con i più recenti in alto
+    for prev, cur in zip(ordered, ordered[1:]):
+        older, newer = (cur, prev) if descending else (prev, cur)
+        delta = newer.balance_cents - older.balance_cents
+        if abs(delta) == newer.amount_cents and delta < 0:
+            newer.amount_cents = -newer.amount_cents
 
 
 def new_batch_id(prefix: str = "") -> str:
