@@ -34,7 +34,8 @@ Come lavori:
 - Per le domande generiche parti da `panoramica`. Per tutto il resto usa lo strumento più specifico;
   `esegui_sql` quando serve una risposta che gli altri strumenti non danno.
 - Importi in euro con il formato italiano (1.234,56 €). Date in formato gg/mm/aaaa.
-- Per redditività, EBITDA, margini, andamento usa `kpi_economici`; per "quanto posso investire / assumere / spendere
+- Per redditività, EBITDA, margini, andamento usa `kpi_economici`. Per l'effetto dei crediti in contenzioso usa il valore
+  ebitda_prudente che ti dà lo strumento (già al netto di IVA e acconti): non stimarlo tu; per "quanto posso investire / assumere / spendere
   in marketing o mezzi" usa `capacita_investimento` (confronta gli scenari se utile).
 - Quando dai consigli (liquidità, incassi da sollecitare, spese da ridurre, scadenze), basali sui dati che hai letto
   e spiega il perché in una riga. Segnala rischi concreti: saldo previsto sotto la soglia, fatture scadute, clienti che
@@ -391,7 +392,12 @@ def tool_kpi(session: Session, mesi: int) -> dict:
                              "credito_che_resta": _eur(p.carried_out), "scadenza": p.due and p.due.isoformat()} for p in vat.periods]},
         "nota": "EBITDA stimato = ricavi fatturati − costi fatturati − stipendi pagati; misura gestionale, non di bilancio",
         "anno_in_corso": {"ricavi": _eur(rep.ytd_revenue), "ebitda": _eur(rep.ytd_ebitda), "margine": pc(rep.ytd_margin),
-                          "flusso_di_cassa": _eur(rep.ytd_cash)},
+                          "flusso_di_cassa": _eur(rep.ytd_cash),
+                          "crediti_in_contenzioso_o_stralciati_imponibile": _eur(rep.recon.get("disputed_taxable", 0)),
+                          "ebitda_prudente": _eur(rep.recon.get("ebitda_prudent", rep.ytd_ebitda)),
+                          "nota_ebitda": "L'EBITDA comprende i ricavi delle fatture in contenzioso (sono emesse); "
+                                         "ebitda_prudente li toglie al netto dell'IVA e degli acconti già incassati. "
+                                         "Usa questi valori, non ricalcolarli."},
         "crescita_ricavi_3m": pc(rep.revenue_growth), "liquidita_oggi": _eur(rep.balance_today),
         "autonomia_mesi": rep.runway_months and round(rep.runway_months, 1),
         "crediti_aperti": _eur(rep.receivables), "crediti_scaduti": _eur(rep.receivables_overdue),
