@@ -100,7 +100,7 @@ NAV = [
         ("/documenti", "Scadenzario documenti"),
         ("/pacchetto", "Pacchetto commercialista"),
     ]),
-    ("", [("/assistente", "Assistente AI"), ("/impostazioni", "Impostazioni"), ("/banche", "Open Banking (opzionale)")]),
+    ("", [("/verifica", "Verifica dati"), ("/assistente", "Assistente AI"), ("/impostazioni", "Impostazioni"), ("/banche", "Open Banking (opzionale)")]),
 ]
 env.globals["NAV"] = NAV
 

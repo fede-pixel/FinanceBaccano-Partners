@@ -171,6 +171,18 @@ L'app ricava dalla descrizione il nome dell'esercente, togliendo le parti bancar
 
 Quando una categoria è sbagliata, correggila in **Movimenti**: l'app crea una regola e la applica a tutti i movimenti dello stesso fornitore, presenti e futuri. Le categorie scelte a mano non vengono mai sovrascritte.
 
+## Verifica dati
+
+La pagina **Verifica dati** controlla in automatico la qualità dei dati:
+- fatture senza IVA, a importo zero o doppie;
+- autofatture ancora tra le emesse;
+- buchi nei movimenti per conto;
+- crediti vecchi non incassati ed entrate non abbinate;
+- spese senza categoria;
+- Excel inviati al commercialista diventati vecchi.
+
+Mostra anche i totali dell'anno da confrontare con Aruba: IVA compresa, come la lista, e imponibile, come il grafico "Fatturato". Da aprire dopo ogni caricamento; la stessa verifica è disponibile all'Assistente AI.
+
 ## Dati sempre allineati
 
 Saldi, forecast, KPI, IVA, capacità di investimento, situazione fatture e schede cliente sono calcolati ogni volta che apri la pagina, quindi riflettono sempre gli ultimi dati.

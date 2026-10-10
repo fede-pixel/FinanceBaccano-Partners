@@ -119,6 +119,13 @@ TOOLS = [
         },
     },
     {
+        "name": "verifica_dati",
+        "description": "Controlli automatici sulla qualità dei dati (fatture senza IVA, doppioni, autofatture, buchi nei movimenti, "
+                       "crediti vecchi, entrate non abbinate) e totali fatture dell'anno da confrontare con Aruba. Usala quando "
+                       "l'utente chiede se i dati sono a posto o perché un numero non torna.",
+        "input_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+    },
+    {
         "name": "scheda_controparte",
         "description": "Scheda di un cliente o fornitore cercato per nome (anche parziale): fatture (IVA compresa), incassi o "
                        "pagamenti abbinati, movimenti con il suo nome non ancora abbinati, importo aperto e differenza. "
@@ -411,6 +418,15 @@ def run_tool(session: Session, name: str, args: dict) -> str:
             out = tool_previsione(session, **args)
         elif name == "scadenze_documenti":
             out = tool_scadenze(session, **args)
+        elif name == "verifica_dati":
+            from app.services import data_check
+
+            t = data_check.totals(session, date.today().year)
+            out = {"controlli": [{"controllo": c.title, "esito": c.status, "dettaglio": c.detail, "esempi": c.items[:5]}
+                                 for c in data_check.run_checks(session)],
+                   "totali_anno": {"emesse_iva_compresa": _eur(t.issued_gross), "emesse_imponibile": _eur(t.issued_taxable),
+                                   "ricevute_iva_compresa": _eur(t.received_gross), "ricevute_imponibile": _eur(t.received_taxable),
+                                   "nota": "IVA compresa = lista Aruba (autofatture in entrambe); imponibile = grafico Aruba"}}
         elif name == "scheda_controparte":
             out = tool_controparte(session, **args)
         elif name == "kpi_economici":

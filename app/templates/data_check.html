@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Verifica dati{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Verifica dati</h1>
+  <div class="muted">Controlli automatici dopo ogni caricamento: se è tutto verde, i numeri di KPI, IVA, forecast e investimenti sono affidabili.</div></div>
+</div>
+
+{% if n_err %}<div class="alert err"><strong>{{ n_err }} problemi da sistemare</strong>{% if n_warn %} e {{ n_warn }} punti da controllare{% endif %}.</div>
+{% elif n_warn %}<div class="alert warn"><strong>{{ n_warn }} punti da controllare</strong>, niente di bloccante.</div>
+{% else %}<div class="alert ok"><strong>Tutto in ordine.</strong></div>{% endif %}
+
+<div class="card">
+  <h2>Totali fatture {{ anno }}: confrontali con Aruba</h2>
+  <table class="small" style="max-width:820px">
+    <thead><tr><th></th><th class="num">Documenti</th><th class="num">IVA compresa<div class="muted" style="font-weight:400">= totale della lista di Aruba</div></th>
+      <th class="num">Imponibile<div class="muted" style="font-weight:400">= grafico "Fatturato" di Aruba</div></th></tr></thead>
+    <tbody>
+      <tr><td>Fatture emesse</td><td class="num">{{ tot.issued_count }}</td><td class="num"><strong>{{ tot.issued_gross|eur }}</strong></td><td class="num"><strong>{{ tot.issued_taxable|eur }}</strong></td></tr>
+      <tr><td>Fatture ricevute</td><td class="num">{{ tot.received_count }}</td><td class="num"><strong>{{ tot.received_gross|eur }}</strong></td><td class="num"><strong>{{ tot.received_taxable|eur }}</strong></td></tr>
+      <tr><td>Differenza emesse − ricevute</td><td></td><td class="num">{{ (tot.issued_gross - tot.received_gross)|eur_sign }}</td><td class="num">{{ (tot.issued_taxable - tot.received_taxable)|eur_sign }}</td></tr>
+    </tbody>
+  </table>
+  <p class="small muted">Le autofatture estere (TD17/TD18, {{ tot.self_gross|eur }}) sono contate come nella lista di Aruba, sia tra le emesse sia tra le ricevute, ed escluse dall'imponibile come nel grafico. Se un numero non coincide con Aruba, di solito mancano fatture recenti: ricarica i report aggiornati a oggi. Su Aruba seleziona tutto l'anno ({{ anno }}).</p>
+</div>
+
+<div class="card">
+  <h2>Controlli</h2>
+  {% for c in checks %}
+  <div class="doc-row" style="grid-template-columns: auto 1fr auto">
+    <span class="badge {{ {'ok': 'good', 'warn': 'warn', 'err': 'crit', 'info': 'info'}[c.status] }}">{{ {'ok': 'OK', 'warn': 'Da controllare', 'err': 'Da sistemare', 'info': 'Info'}[c.status] }}</span>
+    <div><strong>{{ c.title }}</strong><div class="small">{{ c.detail }}</div>
+      {% if c.items %}<ul class="note-list small muted">{% for i in c.items %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}</div>
+    {% if c.link and c.status != 'ok' %}<a class="small" href="{{ c.link }}">Vai →</a>{% else %}<span></span>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

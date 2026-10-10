@@ -86,3 +86,17 @@ async def investment_settings(request: Request, session: Session = Depends(get_s
     session.commit()
     back = f"/investimenti?mesi={form.get('mesi', 6)}&scenario={form.get('scenario', 'base')}"
     return redirect(back, msg="Impostazioni salvate")
+
+
+@router.get("/verifica")
+def data_check_page(request: Request, anno: int = 0, session: Session = Depends(get_session)):
+    from datetime import date
+
+    from app.services import data_check
+
+    anno = anno or date.today().year
+    checks = data_check.run_checks(session)
+    order = {"err": 0, "warn": 1, "info": 2, "ok": 3}
+    checks.sort(key=lambda c: order[c.status])
+    return render(request, "data_check.html", checks=checks, tot=data_check.totals(session, anno), anno=anno,
+                  n_err=sum(c.status == "err" for c in checks), n_warn=sum(c.status == "warn" for c in checks))
