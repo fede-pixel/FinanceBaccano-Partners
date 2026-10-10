@@ -182,6 +182,8 @@ class Contract(Base):
     total_taxable_cents: Mapped[int] = mapped_column(Integer)  # importo dell'appalto (imponibile)
     paid_taxable_cents: Mapped[int] = mapped_column(Integer, default=0)  # già fatturato/versato alla data di aggiornamento
     vat_rate: Mapped[int] = mapped_column(Integer, default=10)  # percentuale
+    # importi già IVA compresa (es. "da incassare 140.000"): il residuo non aggiunge l'IVA
+    vat_included: Mapped[bool] = mapped_column(Boolean, default=False)
     as_of: Mapped[_Date] = mapped_column(Date)  # data dell'ultimo aggiornamento del piano
     end_date: Mapped[_Date] = mapped_column(Date)  # entro quando arriva tutto
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
@@ -198,6 +200,8 @@ class Contract(Base):
     @property
     def residual_gross_cents(self) -> int:
         """Residuo da incassare alla data di aggiornamento, IVA compresa."""
+        if self.vat_included:
+            return self.total_taxable_cents - self.paid_taxable_cents
         return round((self.total_taxable_cents - self.paid_taxable_cents) * (100 + self.vat_rate) / 100)
 
 

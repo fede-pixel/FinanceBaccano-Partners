@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_session
 from app.models import Account, Contract
-from app.services import contracts
+from app.services import contracts, inflows
 from app.services.util import fmt_eur, parse_amount, parse_date
 from app.web import redirect, render
 
@@ -18,7 +18,7 @@ def contracts_page(request: Request, edit: int = 0, session: Session = Depends(g
     plans = [contracts.plan(session, c) for c in rows]
     accounts = list(session.scalars(select(Account).where(Account.active).order_by(Account.id)))
     return render(request, "contracts.html", plans=plans, accounts=accounts, editing=session.get(Contract, edit) if edit else None,
-                  total_to_plan=sum(p.to_plan for p in plans if p.contract.active))
+                  inflows=inflows.monthly(session), total_to_plan=sum(p.to_plan for p in plans if p.contract.active))
 
 
 @router.post("/contratti/salva")
@@ -29,6 +29,7 @@ def contract_save(
     total: str = Form(...),
     paid: str = Form("0"),
     vat_rate: int = Form(10),
+    vat_included: int = Form(0),
     as_of: str = Form(...),
     end_date: str = Form(...),
     account_id: int = Form(0),
@@ -46,6 +47,7 @@ def contract_save(
     c.client, c.title, c.notes = client.strip(), title.strip(), notes
     c.total_taxable_cents, c.paid_taxable_cents, c.vat_rate = abs(tot), abs(pd), max(0, min(vat_rate, 30))
     c.as_of, c.end_date, c.account_id = a, e, account_id or None
+    c.vat_included = bool(vat_included)
     session.add(c)
     session.flush()
     contracts.sync_contract(session, c)

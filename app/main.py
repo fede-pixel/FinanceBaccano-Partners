@@ -38,6 +38,7 @@ def bootstrap(db_path=None) -> None:
         from app.services import contracts
 
         contracts.seed_dmg(session)
+        contracts.seed_october_2026(session)
         contracts.sync_all(session)  # le rate partono dal mese corrente: si spostano col passare dei mesi
         session.commit()
         from app.services.util import get_setting, set_setting

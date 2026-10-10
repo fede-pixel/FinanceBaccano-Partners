@@ -52,6 +52,8 @@
 
 <div class="card">{{ forecast_chart(chart, "fc-chart") }}</div>
 
+{% set chart_id = 'fc-inflows' %}{% include "_inflows.html" %}
+
 <div class="card">
   <h2>Giorno per giorno</h2>
   <div class="table-wrap">

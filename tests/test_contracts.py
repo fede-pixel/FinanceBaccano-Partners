@@ -88,3 +88,42 @@ def test_invoice_outside_contract(client):
     client.post(f"/contratti/{cid}/fattura", data={"invoice_id": iid, "inside": "1"})
     with SessionLocal() as s:
         assert contracts.plan(s, s.get(Contract, cid)).to_plan == 6_182_124 - 1_148_400
+
+
+def test_vat_included_contracts_and_october_seed(session):
+    from app.models import Recurrence
+
+    session.add(Invoice(direction="attiva", doc_type="TD01", number="FPR 48/26", date=date(2026, 8, 18),
+                        counterparty="DMG ANALYTICS & CONSULTING S.R.L.S.", total_cents=719_950, vat_cents=65_450,
+                        file_name="z", file_hash="z"))
+    session.flush()
+    assert contracts.seed_october_2026(session) and not contracts.seed_october_2026(session)
+    by = {c.client: c for c in session.scalars(select(Contract))}
+    assert by["Luongo"].residual_gross_cents == 14_000_000  # niente IVA in più: è già la cifra da incassare
+    contracts.sync_contract(session, by["Luongo"], today=date(2026, 10, 10))
+    items = [i for i in contracts.plan(session, by["Luongo"]).items]
+    assert len(items) == 5 and {i.amount_cents for i in items} == {2_800_000}
+    rec = session.scalars(select(Recurrence)).one()
+    occ = session.scalars(select(PlannedItem).where(PlannedItem.recurrence_id == rec.id)).all()
+    assert len(occ) == 8 and all(o.amount_cents == 100_000 for o in occ) and min(o.due_date for o in occ) == date(2026, 10, 15)
+
+
+def test_monthly_inflows_by_source(session, ):
+    from app.services import inflows
+
+    c = _dmg(session)
+    contracts.sync_contract(session, c, today=date(2026, 10, 10))
+    session.add(PlannedItem(title="Fattura", amount_cents=500_000, due_date=date(2026, 11, 15), source="fattura"))
+    session.add(PlannedItem(title="Scaduta", amount_cents=200_000, due_date=date(2026, 9, 15)))
+    session.add(PlannedItem(title="Uscita", amount_cents=-900_000, due_date=date(2026, 11, 20)))
+    session.commit()
+    r = inflows.monthly(session, date(2026, 10, 10))
+    assert [m.key for m in r.months][:5] == ["2026-10", "2026-11", "2026-12", "2027-01", "2027-02"] and len(r.months) == 6
+    assert r.months[1].contracts == 1_236_425 and r.months[1].other == 500_000
+    assert r.overdue == 200_000 and r.total == 6_182_124 + 500_000
+    assert r.months[-1].cumulative == r.total
+
+
+def test_inflows_on_pages(client):
+    for url in ("/", "/forecast", "/contratti"):
+        assert "Incassi previsti mese per mese" in client.get(url).text

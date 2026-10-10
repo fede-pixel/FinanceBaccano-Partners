@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.models import Account, BankConnection, PlannedItem
 from app.services.admin_docs import ensure_checklist, open_deadlines, period_label
+from app.services import inflows
 from app.services.forecast import Forecast, account_statuses, build_forecast
 from app.services.util import add_months, get_setting, month_bounds, month_label, parse_month
 from app.web import render
@@ -69,6 +70,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         has_banks=session.scalar(select(BankConnection.id).limit(1)) is not None,
         stale_after=today - timedelta(days=7),
         last_upload=_last_upload(session),
+        inflows=inflows.monthly(session, today),
     )
 
 
@@ -113,4 +115,5 @@ def forecast(
         mese=f"{cur.year}-{cur.month:02d}",
         prev_mese=f"{prev_m.year}-{prev_m.month:02d}",
         next_mese=f"{next_m.year}-{next_m.month:02d}",
+        inflows=inflows.monthly(session, today),
     )

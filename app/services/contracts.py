@@ -112,3 +112,33 @@ def seed_dmg(session: Session) -> bool:
     session.flush()
     sync_contract(session, c)
     return True
+
+
+def seed_october_2026(session: Session) -> bool:
+    """Incassi comunicati il 10/10/2026 (importi da incassare, IVA compresa), caricati una sola volta e solo nel
+    database con i dati reali (riconosciuto dalle fatture DMG)."""
+    from app.models import Recurrence
+    from app.services.recurrence import sync_recurrence
+    from app.services.util import get_setting, set_setting
+
+    if get_setting(session, "seed_contracts_2026_10"):
+        return False
+    if not any(name_matches("DMG Analytics & Consulting", i.counterparty)
+               for i in session.scalars(select(Invoice).where(Invoice.direction == "attiva"))):
+        return False
+    set_setting(session, "seed_contracts_2026_10", "1")
+    note = "Comunicato il 10/10/2026: importo da incassare IVA compresa, date di incasso non note (diviso per mese)."
+    for client, cents, end in (("Luongo", 14_000_000, date(2027, 2, 28)), ("Mercuri", 1_500_000, date(2026, 12, 31)),
+                               ("Salerno", 10_000_000, date(2027, 3, 31))):
+        c = Contract(client=client, total_taxable_cents=cents, vat_included=True, as_of=date(2026, 10, 10), end_date=end, notes=note)
+        session.add(c)
+        session.flush()
+        sync_contract(session, c)
+    rec = Recurrence(title="Incasso mensile Mercuri", amount_cents=100_000, category=CATEGORY, frequency="mensile",
+                     day_of_month=15, start_date=date(2026, 10, 15), end_date=date(2027, 5, 15),
+                     notes="1.000 € al mese per 8 mesi da ottobre 2026 (comunicato il 10/10/2026).")
+    session.add(rec)
+    session.flush()
+    sync_recurrence(session, rec)
+    session.flush()
+    return True
