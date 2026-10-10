@@ -93,6 +93,22 @@ Quando la lettura automatica di un estratto conto PDF non funziona (impaginazion
 - **Costo:** si paga a consumo sul tuo account Anthropic. Con il modello predefinito (Claude Opus 5.5) un estratto di qualche pagina costa pochi centesimi, uno da 50+ pagine 1–2 €. L'anteprima mostra il costo stimato di ogni lettura. Il modello si può cambiare con la variabile `FBP_AI_MODEL`.
 - **Privacy:** il contenuto del PDF viene elaborato dal servizio di Anthropic. Se non imposti la chiave la funzione resta spenta e nessun dato esce dall'app.
 
+## Fatture da saldare (controllo incrociato fatture ↔ pagamenti)
+
+La pagina **Fatture da saldare** confronta le fatture con i movimenti bancari e mostra:
+- **Da pagare**: fatture ricevute non ancora pagate, con scadenza e giorni di ritardo;
+- **Da incassare**: fatture emesse non ancora incassate;
+- **Pagate senza movimento**: segnate pagate (carta/contanti nel report Aruba, "Pagata", storico) ma senza il movimento che lo prova;
+- **Pagate e incassate**: collegate al movimento bancario, con un clic per scollegare se l'abbinamento è sbagliato.
+
+Il controllo parte da solo a ogni caricamento di movimenti o fatture e a ogni apertura della pagina:
+- abbinamento automatico quando l'importo coincide (rata, netto a pagare o totale) e il movimento riporta il nome della controparte o il numero della fattura;
+- un bonifico che paga più fatture dello stesso fornitore viene riconosciuto se la somma è esatta;
+- note di credito di pari importo compensano la fattura;
+- con il solo importo uguale l'abbinamento è proposto in **Da confermare**.
+
+Ogni vista si scarica in Excel. "Segna pagata" serve per i pagamenti da conti non caricati in app.
+
 ## Analisi spese
 
 Ogni movimento riceve in automatico una categoria (Software e abbonamenti, Carburante e trasporti, Tasse e contributi, Ristoranti e bar…) in base alle parole della descrizione e della controparte. La pagina **Analisi spese** mostra un grafico a barre delle uscite per categoria, con percentuali, dettaglio per fornitore e filtro per periodo e conto. I giroconti tra conti propri e le entrate sono esclusi.

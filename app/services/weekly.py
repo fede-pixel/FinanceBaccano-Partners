@@ -256,6 +256,7 @@ def process_batch(session: Session, batch: Batch) -> BatchResult:
                 continue
             r = import_transactions(session, account, txs, new_batch_id(), update_balance=bool(profile.balance_col))
             res.movements += r.inserted
+            res.matched += r.invoices_matched
             res.lines.append(f"{account.name}: {r.inserted} nuovi movimenti" + (f", {r.skipped} già presenti" if r.skipped else ""))
             if errors:
                 res.errors.append(f"{item.name}: {len(errors)} righe non lette")
@@ -278,6 +279,10 @@ def process_batch(session: Session, batch: Batch) -> BatchResult:
         if inv.duplicates:
             res.lines.append(f"{len(inv.duplicates)} fatture già importate, saltate")
         res.errors += inv.errors
+    # controllo incrociato fatture <-> movimenti (prima delle altre voci previste: usa anche nome e numero fattura)
+    from app.services import invoice_match
+
+    res.matched += invoice_match.run(session).matched
     # abbinamenti certi tra movimenti appena caricati e voci previste
     tol = int(get_setting(session, "match_tolerance_days") or 7)
     for s in reconcile.suggest_matches(session, tol):

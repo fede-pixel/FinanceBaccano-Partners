@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% from "_macros.html" import amount %}
+{% block title %}Fatture da saldare{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Fatture da saldare</h1>
+  <div class="muted">Controllo incrociato tra fatture e movimenti bancari: cosa è stato pagato o incassato e cosa no.</div></div>
+  <a class="btn btn-ghost" href="/fatture/situazione.xlsx?vista={{ vista }}">Scarica in Excel</a>
+</div>
+
+<div class="kpis">
+  <a class="kpi" href="?vista=pagare"><div class="label">Fatture ricevute da pagare</div><div class="value">{{ k_pay.total|eur }}</div>
+    <div class="sub">{{ k_pay.count }} fatture{% if k_pay.overdue_count %} · <span class="neg">{{ k_pay.overdue_count }} scadute per {{ k_pay.overdue|eur }}</span>{% endif %}</div></a>
+  <a class="kpi" href="?vista=incassare"><div class="label">Fatture emesse da incassare</div><div class="value">{{ k_inc.total|eur }}</div>
+    <div class="sub">{{ k_inc.count }} fatture{% if k_inc.overdue_count %} · <span class="neg">{{ k_inc.overdue_count }} scadute per {{ k_inc.overdue|eur }}</span>{% endif %}</div></a>
+  <a class="kpi" href="?vista=presunte"><div class="label">Pagate senza movimento</div><div class="value">{{ k_pres.count }}</div>
+    <div class="sub">segnate pagate, pagamento non trovato</div></a>
+  <a class="kpi" href="?vista=pagate"><div class="label">Pagate e incassate verificate</div><div class="value">{{ k_paid.count }}</div>
+    <div class="sub">collegate al movimento bancario</div></a>
+</div>
+
+{% if proposals %}
+<div class="card">
+  <h2>Da confermare ({{ proposals|length }})</h2>
+  <p class="small muted">Movimenti che probabilmente saldano una fattura, ma senza prove sufficienti per abbinarli da soli. Controlla e conferma.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Movimento</th><th>Fatture</th><th>Perché</th><th class="num">Importo</th><th></th></tr></thead>
+    <tbody>
+    {% for p in proposals %}
+      <tr>
+        <td><div>{{ p.transaction.date|d }} · <span class="small">{{ p.transaction.account.name }}</span></div><div class="small muted">{{ p.transaction.description[:90] }}</div></td>
+        <td class="small">{% for it in p.items %}<div>{{ it.invoice.counterparty }} · n. {{ it.invoice.number }} del {{ it.invoice.date|d }} ({{ it.amount_cents|eur_sign }})</div>{% endfor %}</td>
+        <td class="small">{{ p.reason }}</td>
+        <td>{{ amount(p.transaction.amount_cents) }}</td>
+        <td class="actions"><form method="post" action="/fatture/situazione/abbina">
+          <input type="hidden" name="tx_id" value="{{ p.transaction.id }}">
+          <input type="hidden" name="item_ids" value="{{ p.items|map(attribute='id')|join(',') }}">
+          <button class="small">Conferma</button></form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}
+
+<form class="toolbar" method="get">
+  <div class="tabs">
+    {% for key, v in views.items() %}<a class="{{ 'active' if key == vista }}" href="?vista={{ key }}">{{ v[2] }}</a>{% endfor %}
+  </div>
+  <input type="hidden" name="vista" value="{{ vista }}">
+  <input type="search" name="q" value="{{ q }}" placeholder="Cerca fornitore, cliente o numero">
+  <button class="ghost">Cerca</button>
+</form>
+
+<div class="card">
+  {% if vista == 'presunte' %}
+  <p class="small muted">Fatture risultate pagate senza un movimento collegato: pagate con carta o in contanti secondo il report di Aruba, segnate "Pagata", oppure scadute prima della data indicata nell'import. Quando carichi i movimenti del periodo, l'app cerca il pagamento e le sposta tra le verificate.</p>
+  {% endif %}
+  {% if rows %}
+  <div class="table-wrap"><table>
+    <thead><tr>
+      <th>Fattura</th><th>Controparte</th>
+      {% if vista in ('pagare', 'incassare') %}<th>Scadenza</th><th class="num">Da saldare</th>{% else %}<th>Pagata il</th><th>Movimento</th><th class="num">Importo</th>{% endif %}
+      <th></th></tr></thead>
+    <tbody>
+    {% for s in rows %}{% set inv = s.invoice %}
+      <tr>
+        <td style="white-space:nowrap">n. {{ inv.number }}<div class="small muted">{{ inv.date|d }} · {{ inv.doc_type }}{% if vista in ('presunte', 'pagate') %} · {{ 'ricevuta' if inv.direction == 'passiva' else 'emessa' }}{% endif %}</div></td>
+        <td>{{ inv.counterparty }}<div class="small muted">{{ inv.counterparty_vat }}</div></td>
+        {% if vista in ('pagare', 'incassare') %}
+        <td style="white-space:nowrap">{{ s.due|d }}
+          {% if s.overdue_days > 0 %}<span class="badge crit">scaduta da {{ s.overdue_days }} gg</span>{% endif %}
+          {% if s.items|selectattr('estimated_date')|list %}<span class="badge warn" title="La fattura non indica la scadenza: stimata dalla data fattura">stimata</span>{% endif %}</td>
+        <td class="num">{{ s.open_cents|eur }}{% if s.open_cents != inv.total_cents|abs and inv.total_cents %}<div class="small muted">tot. {{ inv.total_cents|eur }}</div>{% endif %}</td>
+        <td class="actions"><details><summary class="small">Segna pagata</summary>
+          <form method="post" action="/fatture/situazione/segna" style="display:flex;gap:6px;margin-top:6px">
+            <input type="hidden" name="item_ids" value="{{ s.items|selectattr('status', 'equalto', 'previsto')|map(attribute='id')|join(',') }}">
+            <input type="hidden" name="back" value="/fatture/situazione?vista={{ vista }}">
+            <input type="date" name="paid_date" value="{{ today.isoformat() }}"><button class="small">OK</button></form></details></td>
+        {% else %}
+        <td>{{ s.paid_date|d if s.paid_date else '—' }}
+          {% if s.state == 'compensata' %}<div class="small muted">{{ s.items[0].notes }}</div>{% endif %}
+          {% if s.items|selectattr('settlement', 'equalto', 'manuale')|list %}<div class="small muted">segnata a mano</div>{% endif %}</td>
+        <td class="small">{% for t in s.transactions %}<div>{{ t.date|d }} · {{ t.account.name }} · {{ t.amount_cents|eur_sign }}<div class="muted">{{ t.description[:70] }}</div></div>{% else %}<span class="muted">{{ s.items[0].notes or '—' }}</span>{% endfor %}</td>
+        <td class="num">{{ inv.total_cents|eur }}</td>
+        <td class="actions">
+          {% for t in s.transactions %}<form method="post" action="/fatture/situazione/scollega" data-confirm="Annullare l'abbinamento? Le fatture saldate da questo movimento tornano da saldare.">
+            <input type="hidden" name="tx_id" value="{{ t.id }}"><input type="hidden" name="back" value="/fatture/situazione?vista={{ vista }}">
+            <button class="small ghost">Scollega</button></form>{% endfor %}
+          {% if not s.transactions %}<form method="post" action="/fatture/situazione/segna">
+            <input type="hidden" name="item_ids" value="{{ s.items|map(attribute='id')|join(',') }}"><input type="hidden" name="action" value="riapri">
+            <input type="hidden" name="back" value="/fatture/situazione?vista={{ vista }}">
+            <button class="small ghost">Non è pagata</button></form>{% endif %}
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="small muted">{{ rows|length }} fatture</p>
+  {% else %}
+  <p class="muted">Nessuna fattura in questa vista.</p>
+  {% endif %}
+</div>
+
+<div class="card small">
+  <h3>Come funziona il controllo</h3>
+  <p>Ogni volta che apri questa pagina o carichi movimenti o fatture, l'app cerca tra i movimenti bancari il pagamento di ogni fattura:</p>
+  <ul>
+    <li><strong>Abbinamento automatico</strong> quando l'importo è lo stesso della fattura (o della rata) e nella descrizione del movimento c'è il nome del fornitore/cliente o il numero della fattura.</li>
+    <li><strong>Un bonifico per più fatture</strong> dello stesso fornitore: riconosciuto se la somma delle fatture è esattamente l'importo del bonifico.</li>
+    <li><strong>Note di credito</strong> di pari importo di una fattura aperta dello stesso fornitore: le due si compensano.</li>
+    <li><strong>Da confermare</strong>: stesso importo e un solo candidato, ma senza nome o numero nella descrizione.</li>
+  </ul>
+  <p class="muted">Pagamenti parziali o con importi diversi dalla fattura (sconti, arrotondamenti, ritenute non indicate) non vengono abbinati da soli: usa "Segna pagata" oppure abbina il movimento da Riconciliazione.</p>
+</div>
+{% endblock %}

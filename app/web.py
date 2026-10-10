@@ -30,6 +30,7 @@ NAV = [
         ("/movimenti", "Movimenti"),
         ("/riconciliazione", "Riconciliazione"),
         ("/fatture", "Fatture (Aruba)"),
+        ("/fatture/situazione", "Fatture da saldare"),
         ("/ricorrenze", "Ricorrenze"),
         ("/conti", "Conti e carte"),
     ]),
@@ -40,6 +41,15 @@ NAV = [
     ("", [("/impostazioni", "Impostazioni"), ("/banche", "Open Banking (opzionale)")]),
 ]
 env.globals["NAV"] = NAV
+
+
+def active_nav(path: str) -> str:
+    """La voce di menu più specifica che corrisponde alla pagina (es. /fatture/situazione e non /fatture)."""
+    hrefs = [h for _, links in NAV for h, _ in links if h == path or (h != "/" and path.startswith(h))]
+    return max(hrefs, key=len) if hrefs else ""
+
+
+env.globals["active_nav"] = active_nav
 env.globals["ONLINE"] = config.ONLINE
 env.globals["auth_enabled"] = lambda: bool(config.APP_PASSWORD)
 

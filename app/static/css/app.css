@@ -177,3 +177,8 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-
   .doc-row { grid-template-columns: 1fr; }
 }
 td > span.num:only-child { display: block; text-align: right; }
+a.kpi { color: inherit; display: block; }
+a.kpi:hover { border-color: var(--axis); text-decoration: none; }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tabs a { padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--ink-2); }
+.tabs a.active { background: var(--surface); border-color: var(--axis); color: var(--ink); font-weight: 600; }

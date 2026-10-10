@@ -63,13 +63,19 @@ def match(session: Session, tx: Transaction, item: PlannedItem) -> None:
     tx.planned_item_id = item.id
     item.status = "pagato"
     item.paid_date = tx.date
+    item.settlement = "movimento"
     if item.account_id is None:
         item.account_id = tx.account_id
 
 
 def unmatch(session: Session, tx: Transaction) -> None:
     item = tx.planned_item
-    tx.planned_item_id = None
-    if item and all(t.id == tx.id for t in item.transactions):
+    tx.planned_item = None
+    if item and not item.transactions:
         item.status = "previsto"
         item.paid_date = None
+        item.settlement = ""
+        item.payment_tx_id = None
+    # altre fatture saldate dallo stesso bonifico
+    for other in session.scalars(select(PlannedItem).where(PlannedItem.payment_tx_id == tx.id)):
+        other.status, other.paid_date, other.settlement, other.payment_tx_id = "previsto", None, "", None

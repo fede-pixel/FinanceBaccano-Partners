@@ -362,6 +362,8 @@ async def import_confirm(token: str, request: Request, conto: int = 0, session: 
         msg += f" ({res.skipped} già presenti, saltati)"
     if res.snapshot:
         msg += f". Saldo aggiornato al {res.snapshot[0].strftime('%d/%m/%Y')}"
+    if res.invoices_matched:
+        msg += f". {res.invoices_matched} fatture risultano pagate/incassate con questi movimenti"
     return redirect(f"/riconciliazione?batch={batch}", msg=msg)
 
 
@@ -427,4 +429,6 @@ async def import_ai_confirm(token: str, request: Request, conto: int = 0, sessio
         msg += f" ({res.skipped} già presenti, saltati)"
     if res.snapshot:
         msg += f". Saldo aggiornato al {res.snapshot[0].strftime('%d/%m/%Y')}"
+    if res.invoices_matched:
+        msg += f". {res.invoices_matched} fatture risultano pagate/incassate con questi movimenti"
     return redirect(f"/riconciliazione?batch={batch}", msg=msg)

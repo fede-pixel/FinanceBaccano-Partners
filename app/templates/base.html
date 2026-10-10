@@ -17,8 +17,7 @@
       <div class="nav-group">
         {% if group %}<div class="nav-title">{{ group }}</div>{% endif %}
         {% for href, label in links %}
-          {% set path = request.url.path %}
-          <a href="{{ href }}" class="{{ 'active' if (href == '/' and path == '/') or (href != '/' and path.startswith(href)) else '' }}">{{ label }}</a>
+          <a href="{{ href }}" class="{{ 'active' if href == active_nav(request.url.path) else '' }}">{{ label }}</a>
         {% endfor %}
       </div>
       {% endfor %}

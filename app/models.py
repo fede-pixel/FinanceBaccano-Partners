@@ -178,6 +178,11 @@ class PlannedItem(Base):
     occurrence_key: Mapped[date | None] = mapped_column(Date, nullable=True)
     invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id", ondelete="CASCADE"), nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
+    # come è stata saldata: "movimento" (trovato il pagamento), "compensata" (nota di credito), "manuale",
+    # "" = segnata pagata senza movimento collegato (es. import storico con "già saldate prima del")
+    settlement: Mapped[str] = mapped_column(String(20), default="")
+    # movimento che salda la voce quando un unico bonifico paga più fatture (per una sola fattura basta tx.planned_item_id)
+    payment_tx_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     account: Mapped[Account | None] = relationship()
     invoice: Mapped[Invoice | None] = relationship(back_populates="planned_items")

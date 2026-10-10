@@ -1,0 +1,336 @@
+"""Controllo incrociato fatture ↔ movimenti bancari.
+
+Per ogni scadenza di fattura non ancora collegata a un movimento cerca il pagamento (o l'incasso) tra i movimenti:
+- importo uguale alla scadenza (o al totale documento) e data compatibile con quella della fattura;
+- in più almeno una prova: il nome della controparte o il numero della fattura nella descrizione del movimento.
+Con importo + prova l'abbinamento è certo e viene fatto in automatico. Con il solo importo (unico candidato da
+entrambe le parti) viene proposto e lo confermi tu. Un bonifico che paga più fatture dello stesso fornitore viene
+riconosciuto se la somma delle fatture è esattamente l'importo del bonifico. Note di credito e fatture di pari
+importo dello stesso fornitore si compensano tra loro."""
+import itertools
+import re
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import date, timedelta
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
+
+from app.models import Invoice, PlannedItem, Transaction
+from app.services import categorize, merchant
+from app.services.fatturapa import CREDIT_NOTE_TYPES
+
+DAYS_BEFORE = 30  # pagamenti con carta: il movimento può precedere la data della fattura
+DAYS_AFTER = 365
+MIN_AMOUNT_ONLY = 5000  # sotto i 50 € il solo importo non basta a proporre un abbinamento
+MAX_GROUP = 6
+
+_STOP = {
+    "srl", "srls", "spa", "sas", "snc", "sapa", "scarl", "scrl", "coop", "ltd", "limited", "inc", "llc", "gmbh", "sarl",
+    "the", "and", "per", "con", "del", "della", "dei", "degli", "di", "da", "ditta", "impresa", "societa", "società",
+    "studio", "ass", "associato", "associati", "italia", "italy", "group", "gruppo", "servizi", "service", "services",
+    "unipersonale", "semplificata", "europe", "ireland", "emea", "s.r.l", "s.p.a",
+}
+
+
+def _tokens(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9àèéìòù]+", (text or "").lower())
+
+
+def _name_words(name: str) -> set[str]:
+    return {w for w in _tokens(name) if len(w) >= 3 and w not in _STOP and not w.isdigit()}
+
+
+def _name_match(words: set[str], brand: str | None, tx_words: set[str], tx_brand: str | None) -> bool:
+    if brand and brand == tx_brand:
+        return True
+    return bool(words) and len(words & tx_words) >= min(2, len(words))
+
+
+def name_matches(counterparty: str, tx_text: str) -> bool:
+    return _name_match(_name_words(counterparty), merchant.brand_of(counterparty), set(_tokens(tx_text)), merchant.brand_of(tx_text))
+
+
+def number_matches(number: str, tx_text: str) -> bool:
+    parts = [p.lstrip("0") or "0" if p.isdigit() else p for p in _tokens(number)]
+    if not parts or len("".join(parts)) < 2:
+        return False
+    have = {p.lstrip("0") or "0" if p.isdigit() else p for p in _tokens(tx_text)}
+    return all(p in have for p in parts)
+
+
+@dataclass
+class Proposal:
+    transaction: Transaction
+    items: list[PlannedItem]
+    reason: str
+
+
+@dataclass
+class MatchResult:
+    matched: int = 0  # scadenze collegate in automatico a un movimento
+    compensated: int = 0  # coppie fattura/nota di credito compensate
+    proposals: list[Proposal] = field(default_factory=list)
+
+
+def _open_items(session: Session) -> list[PlannedItem]:
+    """Scadenze di fattura senza un movimento collegato (aperte o segnate pagate senza prova)."""
+    q = (
+        select(PlannedItem)
+        .join(Invoice)
+        .where(PlannedItem.status != "annullato", PlannedItem.payment_tx_id.is_(None),
+               PlannedItem.settlement.not_in(["compensata", "manuale"]))
+        .options(selectinload(PlannedItem.invoice), selectinload(PlannedItem.transactions))
+    )
+    return [it for it in session.scalars(q) if not it.transactions]
+
+
+def _free_transactions(session: Session) -> list[Transaction]:
+    used = set(session.scalars(select(PlannedItem.payment_tx_id).where(PlannedItem.payment_tx_id.is_not(None))))
+    q = select(Transaction).where(Transaction.planned_item_id.is_(None)).order_by(Transaction.date)
+    return [t for t in session.scalars(q) if t.id not in used and t.category != categorize.INTERNAL]
+
+
+def _in_window(tx: Transaction, inv: Invoice) -> bool:
+    return inv.date - timedelta(days=DAYS_BEFORE) <= tx.date <= inv.date + timedelta(days=DAYS_AFTER)
+
+
+def _amount_ok(tx: Transaction, it: PlannedItem) -> bool:
+    if (tx.amount_cents > 0) != (it.amount_cents > 0):
+        return False
+    a = abs(tx.amount_cents)
+    return abs(a - abs(it.amount_cents)) <= 1 or (it.invoice and abs(a - abs(it.invoice.total_cents)) <= 1
+                                                    and len(it.invoice.planned_items) == 1)
+
+
+def settle(session: Session, tx: Transaction, items: list[PlannedItem]) -> None:
+    """Collega il movimento alle scadenze che salda."""
+    for n, it in enumerate(items):
+        it.status, it.paid_date, it.settlement = "pagato", tx.date, "movimento"
+        if it.account_id is None:
+            it.account_id = tx.account_id
+        if n == 0:
+            tx.planned_item = it  # relazione (non solo l'id): così anche item.transactions è subito aggiornato
+        if len(items) > 1:
+            it.payment_tx_id = tx.id
+    session.flush()
+
+
+def compensate_credit_notes(session: Session, items: list[PlannedItem]) -> int:
+    """Nota di credito aperta che annulla una fattura aperta dello stesso fornitore/cliente e di pari importo."""
+    by_party: dict[tuple[str, str], list[PlannedItem]] = defaultdict(list)
+    for it in items:
+        if it.status == "previsto":
+            by_party[(it.invoice.direction, it.invoice.counterparty_vat or it.invoice.counterparty.lower())].append(it)
+    n = 0
+    for group in by_party.values():
+        notes = [it for it in group if it.invoice.doc_type in CREDIT_NOTE_TYPES]
+        invoices = [it for it in group if it.invoice.doc_type not in CREDIT_NOTE_TYPES]
+        for note in notes:
+            twin = next((i for i in invoices if i.amount_cents == -note.amount_cents and i.status == "previsto"), None)
+            if twin is None:
+                continue
+            for it, other in ((note, twin), (twin, note)):
+                it.status, it.paid_date, it.settlement = "pagato", max(note.invoice.date, twin.invoice.date), "compensata"
+                it.notes = f"Compensata con {other.invoice.doc_type} n. {other.invoice.number}"
+            invoices.remove(twin)
+            n += 1
+    return n
+
+
+def run(session: Session, apply: bool = True) -> MatchResult:
+    """Esegue il controllo incrociato. Con apply=True salva gli abbinamenti certi; restituisce anche le proposte."""
+    res = MatchResult()
+    items = _open_items(session)
+    if apply:
+        res.compensated = compensate_credit_notes(session, items)
+        items = [it for it in items if it.settlement != "compensata"]
+    txs = _free_transactions(session)
+    if not items or not txs:
+        return res
+
+    by_amount: dict[int, list[PlannedItem]] = defaultdict(list)
+    for it in items:
+        by_amount[abs(it.amount_cents)].append(it)
+        if len(it.invoice.planned_items) == 1 and abs(it.invoice.total_cents) != abs(it.amount_cents):
+            by_amount[abs(it.invoice.total_cents)].append(it)
+
+    def candidates(tx: Transaction) -> list[PlannedItem]:
+        a = abs(tx.amount_cents)
+        seen, out = set(), []
+        for k in (a - 1, a, a + 1):
+            for it in by_amount.get(k, []):
+                if it.id not in seen and _amount_ok(tx, it) and _in_window(tx, it.invoice):
+                    seen.add(it.id)
+                    out.append(it)
+        return out
+
+    texts = {tx.id: f"{tx.counterparty} {tx.description}" for tx in txs}
+    # parole e marchio calcolati una volta sola (le fatture sono centinaia, i movimenti migliaia)
+    tx_words = {tx.id: set(_tokens(t)) for tx, t in ((tx, texts[tx.id]) for tx in txs)}
+    tx_brand = {tx.id: merchant.brand_of(texts[tx.id]) for tx in txs}
+    party: dict[str, tuple[set[str], str | None]] = {}
+    for it in items:
+        name = it.invoice.counterparty
+        if name not in party:
+            party[name] = (_name_words(name), merchant.brand_of(name))
+    by_word: dict[str, list[PlannedItem]] = defaultdict(list)
+    by_brand: dict[str, list[PlannedItem]] = defaultdict(list)
+    for it in items:
+        words, brand = party[it.invoice.counterparty]
+        for w in words:
+            by_word[w].append(it)
+        if brand:
+            by_brand[brand].append(it)
+
+    def same_party(tx: Transaction, it: PlannedItem) -> bool:
+        words, brand = party[it.invoice.counterparty]
+        return _name_match(words, brand, tx_words[tx.id], tx_brand[tx.id])
+    certain: list[tuple[float, Transaction, PlannedItem, str]] = []
+    amount_only: dict[int, list[PlannedItem]] = {}
+    for tx in txs:
+        cands = candidates(tx)
+        strong = []
+        for it in cands:
+            by_name = same_party(tx, it)
+            by_number = number_matches(it.invoice.number, texts[tx.id])
+            if by_name or by_number:
+                reason = " e ".join(r for r, ok in (("nome", by_name), ("numero fattura", by_number)) if ok)
+                score = (2 if by_name else 0) + (2 if by_number else 0) + (1 if it.status == "previsto" else 0)
+                score -= abs((tx.date - it.due_date).days) / 1000  # a parità, la scadenza più vicina
+                strong.append((score, tx, it, reason))
+        if strong:
+            certain.extend(strong)
+        elif cands:
+            amount_only[tx.id] = cands
+
+    used_tx: set[int] = set()
+    used_it: set[int] = set()
+    for score, tx, it, reason in sorted(certain, key=lambda c: -c[0]):
+        if tx.id in used_tx or it.id in used_it:
+            continue
+        used_tx.add(tx.id)
+        used_it.add(it.id)
+        if apply:
+            settle(session, tx, [it])
+            res.matched += 1
+        else:
+            res.proposals.append(Proposal(tx, [it], f"Stesso importo, {reason}"))
+
+    # un bonifico che paga più fatture della stessa controparte
+    for tx in txs:
+        if tx.id in used_tx:
+            continue
+        direction = "passiva" if tx.amount_cents < 0 else "attiva"
+        pool = {it.id: it for w in tx_words[tx.id] for it in by_word.get(w, ())}
+        if tx_brand[tx.id]:
+            pool.update((it.id, it) for it in by_brand.get(tx_brand[tx.id], ()))
+        same = sorted(
+            (it for it in pool.values() if it.id not in used_it and it.invoice.direction == direction
+             and it.invoice.date <= tx.date + timedelta(days=DAYS_BEFORE) and _in_window(tx, it.invoice)
+             and same_party(tx, it)),
+            key=lambda it: it.due_date,
+        )
+        if len(same) < 2:
+            continue
+        same = same[:14]
+        found = []
+        for size in range(2, min(MAX_GROUP, len(same)) + 1):
+            for combo in itertools.combinations(same, size):
+                if abs(sum(it.amount_cents for it in combo) - tx.amount_cents) <= len(combo):
+                    found.append(combo)
+                    if len(found) > 1:
+                        break
+            if found:
+                break
+        if not found:
+            continue
+        combo = list(found[0])
+        used_tx.add(tx.id)
+        used_it.update(it.id for it in combo)
+        if apply and len(found) == 1:
+            settle(session, tx, combo)
+            res.matched += len(combo)
+        else:
+            res.proposals.append(Proposal(tx, combo, f"Un bonifico per {len(combo)} fatture della stessa controparte"))
+
+    # solo importo: proposta se il candidato è unico da entrambe le parti
+    claims: dict[int, list[int]] = defaultdict(list)
+    for tx_id, cands in amount_only.items():
+        for it in cands:
+            if it.id not in used_it:
+                claims[it.id].append(tx_id)
+    tx_by_id = {tx.id: tx for tx in txs}
+    # controparti di tutte le fatture: se il movimento ne nomina un'altra, non è il pagamento di questa
+    all_parties = [(w, b) for w, b in (
+        (_name_words(n), merchant.brand_of(n)) for n in set(session.scalars(select(Invoice.counterparty)))
+    ) if w or b]
+    for tx_id, cands in amount_only.items():
+        free = [it for it in cands if it.id not in used_it]
+        tx = tx_by_id[tx_id]
+        if tx_id in used_tx or len(free) != 1 or len(claims[free[0].id]) != 1 or abs(tx.amount_cents) < MIN_AMOUNT_ONLY:
+            continue
+        if any(_name_match(w, b, tx_words[tx_id], tx_brand[tx_id]) for w, b in all_parties):
+            continue
+        res.proposals.append(Proposal(tx, free, "Stesso importo, unico candidato (nome non presente nella descrizione)"))
+    res.proposals.sort(key=lambda p: p.transaction.date, reverse=True)
+    return res
+
+
+# ---------- situazione fatture ----------
+
+@dataclass
+class InvoiceStatus:
+    invoice: Invoice
+    state: str  # aperta | pagata | compensata | presunta | nessun_pagamento
+    due: date | None  # prima scadenza aperta
+    open_cents: int  # residuo (positivo)
+    paid_cents: int
+    paid_date: date | None
+    transactions: list[Transaction]
+    items: list[PlannedItem]
+
+    @property
+    def overdue_days(self) -> int:
+        return (date.today() - self.due).days if self.due and self.state == "aperta" else 0
+
+
+def invoice_statuses(session: Session, direction: str | None = None) -> list[InvoiceStatus]:
+    q = select(Invoice).options(selectinload(Invoice.planned_items).selectinload(PlannedItem.transactions))
+    if direction:
+        q = q.where(Invoice.direction == direction)
+    invoices = list(session.scalars(q))
+    group_tx_ids = {it.payment_tx_id for inv in invoices for it in inv.planned_items if it.payment_tx_id}
+    group_tx = {t.id: t for t in session.scalars(select(Transaction).where(Transaction.id.in_(group_tx_ids)))} if group_tx_ids else {}
+    out = []
+    for inv in invoices:
+        items = [it for it in inv.planned_items if it.status != "annullato"]
+        if not items:
+            out.append(InvoiceStatus(inv, "nessun_pagamento", None, 0, 0, None, [], []))
+            continue
+        open_items = [it for it in items if it.status == "previsto"]
+        txs = []
+        for it in items:
+            txs += it.transactions
+            if it.payment_tx_id and it.payment_tx_id in group_tx and group_tx[it.payment_tx_id] not in txs:
+                txs.append(group_tx[it.payment_tx_id])
+        paid = [it for it in items if it.status == "pagato"]
+        if open_items:
+            state = "aperta"
+        elif all(it.settlement == "compensata" for it in paid):
+            state = "compensata"
+        elif all(it.transactions or it.payment_tx_id or it.settlement in ("compensata", "manuale") for it in paid):
+            state = "pagata"
+        else:
+            state = "presunta"
+        out.append(InvoiceStatus(
+            invoice=inv,
+            state=state,
+            due=min((it.due_date for it in open_items), default=None),
+            open_cents=sum(abs(it.amount_cents) * (1 if inv.doc_type not in CREDIT_NOTE_TYPES else -1) for it in open_items),
+            paid_cents=sum(abs(it.amount_cents) for it in paid),
+            paid_date=max((it.paid_date for it in paid if it.paid_date), default=None),
+            transactions=txs,
+            items=items,
+        ))
+    return out

@@ -226,6 +226,12 @@ async def invoices_import(
     msg = f"Importate {len(res.imported)} fatture"
     if res.duplicates:
         msg += f", {len(res.duplicates)} già presenti"
+    from app.services import invoice_match
+
+    matched = invoice_match.run(session).matched
+    session.commit()
+    if matched:
+        msg += f" · {matched} già abbinate al pagamento"
     err = " · ".join(res.errors[:5]) + (f" (e altri {len(res.errors) - 5} errori)" if len(res.errors) > 5 else "")
     return redirect("/fatture", msg=msg, err=err)
 

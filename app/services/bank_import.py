@@ -600,6 +600,7 @@ class ImportResult:
     inserted: int
     skipped: int
     snapshot: tuple[date, int] | None
+    invoices_matched: int = 0  # scadenze di fatture abbinate ai nuovi movimenti
 
 
 def closing_balance(txs: list[ParsedTx]) -> tuple[date, int] | None:
@@ -646,6 +647,12 @@ def import_transactions(
         from app.services.categorize import apply as categorize
 
         categorize(session, new_txs)
+    matched = 0
+    if new_txs:
+        from app.services import invoice_match
+
+        session.flush()
+        matched = invoice_match.run(session).matched
     snap = closing_balance(txs) if update_balance else None
     if snap:
         row = session.scalar(select(BalanceSnapshot).where(BalanceSnapshot.account_id == account.id, BalanceSnapshot.date == snap[0]))
@@ -654,4 +661,4 @@ def import_transactions(
         else:
             session.add(BalanceSnapshot(account_id=account.id, date=snap[0], balance_cents=snap[1], source="import"))
     session.commit()
-    return ImportResult(inserted=inserted, skipped=len(txs) - inserted, snapshot=snap)
+    return ImportResult(inserted=inserted, skipped=len(txs) - inserted, snapshot=snap, invoices_matched=matched)
