@@ -12,7 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Account, CategoryRule, Transaction
+from app.services import merchant
 
+RULES_VERSION = "2"  # aumentarlo quando cambia la logica: all'avvio le categorie automatiche vengono ricalcolate
 INTERNAL = "Giroconti"  # trasferimenti tra conti propri: esclusi dall'analisi
 OTHER = "Altro"
 INCOME = "Entrate"
@@ -25,7 +27,7 @@ DEFAULT_RULES: list[tuple[str, list[str]]] = [
                             "iva periodica", "ires", "irap", "pagopa", "camera di commercio", "diritto annuale"]),
     ("Stipendi e collaboratori", ["stipendio", "stipendi", "emolumento", "emolumenti", "salario", "cedolino", "retribuzione",
                                   "compenso amministratore", "tfr", "rimborso spese dipendente"]),
-    ("Consulenze e professionisti", ["commercialista", "notaio", "avvocato", "consulenza", "consulente", "studio legale",
+    ("Consulenze e professionisti", ["commercialist", "notai", "avvocat", "consulenz", "consulent", "studio legale",
                                      "studio associato", "parcella", "onorario"]),
     ("Pubblicità e marketing", ["facebk", "facebook", "meta ads", "meta platforms", "instagram", "google ads", "googleads",
                                 "linkedin", "tiktok", "pinterest", "mailchimp", "semrush", "hubspot", "sponsor"]),
@@ -58,26 +60,18 @@ DEFAULT_RULES: list[tuple[str, list[str]]] = [
 ]
 CATEGORIES = [c for c, _ in DEFAULT_RULES] + [OTHER]
 
-# prefissi bancari che non dicono nulla su chi è la controparte
-_NOISE = re.compile(
-    r"\b(pagamento|pagam|pag\.?|pos|carta|card|payment|acquisto|addebito|accredito|bonifico|bon\.?|sepa|sdd|sct|"
-    r"a favore di|a favore|ordinante|beneficiario|disposizione|da|a|di|del|della|to|from|ref|rif|cro|trn|"
-    r"n\.?|nr|num|op|operazione|data|ore|eur|euro|it|del|presso|c/o|contactless|online|web|www|com|srl|spa|s\.r\.l\.|s\.p\.a\.)\b"
-)
-
-
 def norm(text: str) -> str:
     return " " + re.sub(r"\s+", " ", re.sub(r"[^a-z0-9àèéìòù&.]+", " ", (text or "").lower())).strip() + " "
 
 
+def merchant_name(tx: Transaction) -> str:
+    """Nome dell'esercente/controparte ricavato dalla descrizione (vedi services/merchant.py)."""
+    return merchant.merchant_name(tx.description or "", tx.counterparty or "")
+
+
 def merchant_key(tx: Transaction) -> str:
-    """Nome breve della controparte, per raggruppare e per creare regole dalle correzioni."""
-    base = tx.counterparty or tx.description or ""
-    s = norm(base)
-    s = re.sub(r"\b\d[\d./:-]*\b", " ", s)  # date, importi, numeri di riferimento
-    s = _NOISE.sub(" ", s)
-    words = [w.strip(".") for w in s.split() if len(w.strip(".")) > 2]
-    return " ".join(words[:3])
+    """Chiave del gruppo di spese: stessa chiave = stesso esercente. Usata anche per creare le regole."""
+    return merchant.merchant_key(tx.description or "", tx.counterparty or "")
 
 
 def seed_rules(session: Session) -> None:
@@ -106,14 +100,17 @@ class Categorizer:
         rules = []
         for r in session.scalars(select(CategoryRule).order_by(CategoryRule.priority, CategoryRule.id)):
             p = r.pattern.strip().lower()
-            if r.source == "tua":
+            if r.source in ("tua", "ai"):
                 rules.append((p, r.category, frozenset(norm(p).split())))
             else:
-                rules.append((f" {p} " if len(p) <= 3 else p, r.category, None))
+                # la parola chiave deve iniziare una parola del testo ("esso" non scatta dentro "presso"),
+                # le più corte devono coincidere con una parola intera ("bar" non scatta in "barbieri")
+                rules.append((f" {p} " if len(p) <= 3 else f" {p}", r.category, None))
         return cls(rules)
 
     def category_for(self, description: str, counterparty: str, amount_cents: int) -> str:
-        text = norm(f"{counterparty} {description}")
+        # testo originale + nome dell'esercente riconosciuto (es. "AMZN Mktp" -> "Amazon")
+        text = norm(f"{counterparty} {description} {merchant.merchant_name(description, counterparty)}")
         words = set(text.split())
         for pattern, category, needed in self.rules:
             if (needed <= words) if needed else (pattern in text):
@@ -203,7 +200,7 @@ def spending_report(session: Session, start: date, end: date, account_ids: list[
     for category, ts in by_cat.items():
         m: dict[str, list[int]] = defaultdict(lambda: [0, 0])
         for t in ts:
-            name = (merchant_key(t) or t.description[:30] or "—").title()
+            name = merchant_name(t) or "—"
             m[name][0] += -t.amount_cents
             m[name][1] += 1
             merchants_all[(name, category)][0] += -t.amount_cents
@@ -216,3 +213,47 @@ def spending_report(session: Session, start: date, end: date, account_ids: list[
     top = sorted(((n, c, v[0], v[1]) for (n, c), v in merchants_all.items()), key=lambda x: -x[2])[:10]
     other = next((c.total for c in cats if c.category == OTHER), 0)
     return SpendingReport(start, end, total, income, internal, cats, top, other / total if total else 0)
+
+
+@dataclass
+class Cluster:
+    key: str
+    name: str
+    total: int
+    count: int
+    example: str
+
+
+def uncategorized_clusters(session: Session, start: date | None = None, end: date | None = None, limit: int = 20) -> list[Cluster]:
+    """Gruppi di uscite finite in "Altro" (assegnate in automatico), per esercente, dai più costosi."""
+    q = select(Transaction).where(Transaction.category == OTHER, Transaction.category_source != "manuale", Transaction.amount_cents < 0)
+    if start:
+        q = q.where(Transaction.date >= start)
+    if end:
+        q = q.where(Transaction.date <= end)
+    groups: dict[str, Cluster] = {}
+    for t in session.scalars(q):
+        key = merchant_key(t)
+        if not key:
+            continue
+        c = groups.get(key)
+        if c is None:
+            c = groups[key] = Cluster(key, merchant_name(t), 0, 0, (t.description or t.counterparty)[:90])
+        c.total += -t.amount_cents
+        c.count += 1
+    return sorted(groups.values(), key=lambda c: -c.total)[:limit]
+
+
+def assign_cluster(session: Session, key: str, category: str, source: str = "tua") -> int:
+    """Assegna una categoria a tutto un gruppo di esercente creando (o aggiornando) la regola."""
+    key = " ".join(key.lower().split())
+    rule = session.scalar(select(CategoryRule).where(CategoryRule.pattern == key))
+    priority = 10 if source == "tua" else 50  # le tue regole valgono più di quelle proposte dall'AI
+    if rule:
+        if rule.source == "tua" and source == "ai":
+            return 0  # non sovrascrivo una tua scelta
+        rule.category, rule.priority, rule.source = category, priority, source
+    else:
+        session.add(CategoryRule(pattern=key, category=category, priority=priority, source=source))
+    session.flush()
+    return apply(session)

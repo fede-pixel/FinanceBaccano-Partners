@@ -74,8 +74,44 @@
 <div class="card empty">Nessuna uscita nel periodo. Carica i movimenti dal <a href="/carica">Caricamento settimanale</a>.</div>
 {% endif %}
 
+{% if clusters %}
+<div class="card">
+  <div class="page-head" style="margin-bottom:8px">
+    <div><h2 style="margin:0">Da classificare</h2>
+      <div class="small muted">Spese finite in "Altro", raggruppate per esercente. Una scelta vale per tutto il gruppo e per i movimenti futuri.</div></div>
+    {% if ai_enabled %}
+    <form method="post" action="/analisi/ai-classifica" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='Classificazione in corso…'">
+      <input type="hidden" name="back" value="{{ back }}">
+      <button title="Claude propone la categoria dei gruppi in Altro, scegliendo solo tra le tue categorie. Vengono inviati solo i nomi degli esercenti e una descrizione d'esempio.">Classifica con l'AI</button>
+    </form>
+    {% endif %}
+  </div>
+  <datalist id="cat-list3">{% for c in categories %}<option value="{{ c }}">{% endfor %}</datalist>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Esercente</th><th>Esempio di descrizione</th><th class="num">Totale</th><th class="num">Mov.</th><th>Categoria</th></tr></thead>
+    <tbody>
+    {% for c in clusters %}
+      <tr>
+        <td><strong>{{ c.name }}</strong></td>
+        <td class="small muted">{{ c.example }}</td>
+        <td class="num">{{ c.total|eur }}</td>
+        <td class="num">{{ c.count }}</td>
+        <td><form class="inline" method="post" action="/analisi/gruppo" style="flex-wrap:nowrap">
+          <input type="hidden" name="key" value="{{ c.key }}"><input type="hidden" name="back" value="{{ back }}">
+          <input name="category" list="cat-list3" size="18" required placeholder="Scegli…">
+          <button class="small">OK</button>
+        </form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
 <details class="card">
-  <summary>Regole di categorizzazione ({{ my_rules|length }} tue + {{ base_rules }} di base)</summary>
+  <summary>Regole di categorizzazione ({{ my_rules|selectattr('source', 'equalto', 'tua')|list|length }} tue, {{ my_rules|selectattr('source', 'equalto', 'ai')|list|length }} proposte dall'AI, {{ base_rules }} di base)</summary>
   <p class="small">Il modo più semplice per insegnare all'app è correggere la categoria di un movimento in <a href="/movimenti">Movimenti</a>: viene creata una regola e applicata a tutti i movimenti simili. Puoi anche aggiungerle qui.</p>
   <form class="inline" method="post" action="/analisi/regole">
     <div><label>Se la descrizione contiene</label><input name="pattern" required placeholder="es. esselunga"></div>
@@ -85,10 +121,10 @@
   </form>
   {% if my_rules %}
   <table class="small" style="margin-top:12px">
-    <thead><tr><th>Parole chiave</th><th>Categoria</th><th></th></tr></thead>
+    <thead><tr><th>Esercente / parole chiave</th><th>Categoria</th><th>Origine</th><th></th></tr></thead>
     <tbody>
     {% for r in my_rules %}
-      <tr><td>{{ r.pattern }}</td><td>{{ r.category }}</td>
+      <tr><td>{{ r.pattern }}</td><td>{{ r.category }}</td><td>{% if r.source == 'ai' %}<span class="badge info">AI</span>{% else %}<span class="badge good">tua</span>{% endif %}</td>
         <td class="actions"><form method="post" action="/analisi/regole/{{ r.id }}/elimina" data-confirm="Eliminare la regola?"><button class="small danger">×</button></form></td></tr>
     {% endfor %}
     </tbody>

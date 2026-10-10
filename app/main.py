@@ -31,7 +31,14 @@ def bootstrap(db_path=None) -> None:
         from app.services import categorize
 
         categorize.seed_rules(session)
-        if categorize.apply(session, list(session.scalars(select(Transaction).where(Transaction.category_source == "")))):
+        from app.services.util import get_setting, set_setting
+
+        if get_setting(session, "rules_version") != categorize.RULES_VERSION:
+            # logica di classificazione aggiornata: ricalcolo le categorie automatiche (mai quelle scelte a mano)
+            categorize.apply(session)
+            set_setting(session, "rules_version", categorize.RULES_VERSION)
+            session.commit()
+        elif categorize.apply(session, list(session.scalars(select(Transaction).where(Transaction.category_source == "")))):
             session.commit()
 
 

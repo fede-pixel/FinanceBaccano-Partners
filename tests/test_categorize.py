@@ -48,7 +48,7 @@ def test_learning_from_manual_correction(session):
     session.commit()
     assert a.category == "Altro" and other.category == "Acquisti e forniture"
     key, updated = cz.learn(session, a, "Manutenzione sede")
-    assert key == "ferramenta bianchi milano"
+    assert key == "ferramenta bianchi"  # città, data, ora e numeri esclusi
     assert a.category_source == "manuale" and b.category == "Manutenzione sede" and updated >= 1
     assert other.category == "Acquisti e forniture"
     # i movimenti futuri dello stesso fornitore vengono riconosciuti, anche con parole in mezzo
@@ -109,3 +109,12 @@ def test_analysis_page_and_rules_from_ui(client):
     assert "FERRAMENTA ROSSI" in r.text and "TELEPASS" not in r.text
     for p in ["mese", "mese_prec", "3m", "6m", "12m", "anno"]:
         assert client.get(f"/analisi?periodo={p}").status_code == 200
+
+
+def test_keywords_match_only_at_word_start(session):
+    cz.seed_rules(session)
+    c = cz.Categorizer.load(session)
+    assert c.category_for("PAGAMENTO POS PRESSO FERRAMENTA BIANCHI", "", -100) == "Altro"  # non "esso"
+    assert c.category_for("ESSO STATION ROMA", "", -100) == "Carburante e trasporti"
+    assert c.category_for("ASSICURAZIONE AUTO RCA", "", -100) == "Assicurazioni"  # prefisso "assicuraz"
+    assert c.category_for("SPESE BONIFICO", "", -100) == "Banca e commissioni"

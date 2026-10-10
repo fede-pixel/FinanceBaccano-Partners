@@ -97,6 +97,8 @@ Quando la lettura automatica di un estratto conto PDF non funziona (impaginazion
 
 Ogni movimento riceve in automatico una categoria (Software e abbonamenti, Carburante e trasporti, Tasse e contributi, Ristoranti e bar…) in base alle parole della descrizione e della controparte. La pagina **Analisi spese** mostra un grafico a barre delle uscite per categoria, con percentuali, dettaglio per fornitore e filtro per periodo e conto. I giroconti tra conti propri e le entrate sono esclusi.
 
+L'app ricava dalla descrizione il nome dell'esercente, togliendo le parti bancarie che non servono (tipo di operazione, carta, data e ora, mandati SDD, riferimenti, circuiti come PayPal/SumUp, città) e riconoscendo i marchi più comuni: "AMZN Mktp IT*1A2B", "AMAZON EU SARL" e "Amazon.it" diventano tutti **Amazon**. Nella pagina Analisi il riquadro **Da classificare** raggruppa per esercente le spese finite in "Altro": una scelta vale per tutto il gruppo e per i movimenti futuri. Con la chiave Anthropic attiva, **Classifica con l'AI** fa proporre a Claude la categoria dei gruppi rimasti, scegliendo solo tra le tue categorie (vengono inviati solo i nomi degli esercenti e una descrizione d'esempio, senza importi).
+
 Quando una categoria è sbagliata, correggila in **Movimenti**: l'app crea una regola e la applica a tutti i movimenti dello stesso fornitore, presenti e futuri. Le categorie scelte a mano non vengono mai sovrascritte.
 
 ## Come funziona il forecast

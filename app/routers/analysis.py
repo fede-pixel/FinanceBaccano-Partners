@@ -54,12 +54,51 @@ def analysis(request: Request, periodo: str = "3m", mese: str = "", conto: int =
         "counts": [c.count for c in report.categories],
     })
     accounts = list(session.scalars(select(Account).where(Account.active).order_by(Account.id)))
-    my_rules = list(session.scalars(select(CategoryRule).where(CategoryRule.source == "tua").order_by(CategoryRule.category, CategoryRule.pattern)))
+    my_rules = list(session.scalars(
+        select(CategoryRule).where(CategoryRule.source.in_(["tua", "ai"])).order_by(CategoryRule.source.desc(), CategoryRule.category, CategoryRule.pattern)
+    ))
+    clusters = categorize.uncategorized_clusters(session, start, end)
+    from app.services.ai_extract import is_enabled as ai_enabled
     base_rules = session.scalar(select(func.count()).select_from(CategoryRule).where(CategoryRule.source == "base"))
     return render(
         request, "analysis.html", report=report, chart=chart, title=title, periodo=periodo, mese=mese, conto=conto,
         periods=PERIODS, accounts=accounts, my_rules=my_rules, base_rules=base_rules,
         categories=categorize.CATEGORIES, da=start.isoformat(), a=end.isoformat(),
+        clusters=clusters, ai_enabled=ai_enabled(), back=str(request.url.path) + ("?" + request.url.query if request.url.query else ""),
+    )
+
+
+def _back(back: str) -> str:
+    return back if back.startswith("/analisi") else "/analisi"
+
+
+@router.post("/analisi/gruppo")
+def assign_group(key: str = Form(...), category: str = Form(...), back: str = Form("/analisi"), session: Session = Depends(get_session)):
+    category = category.strip()
+    if not category:
+        return redirect(_back(back), err="Scegli una categoria")
+    n = categorize.assign_cluster(session, key, category)
+    session.commit()
+    return redirect(_back(back), msg=f"«{key}» → {category}: aggiornati {n} movimenti (vale anche per i prossimi)")
+
+
+@router.post("/analisi/ai-classifica")
+def ai_classify(back: str = Form("/analisi"), session: Session = Depends(get_session)):
+    from app.services import ai_categorize
+    from app.services.ai_extract import AIExtractionError, AIUnavailable
+
+    clusters = categorize.uncategorized_clusters(session, limit=ai_categorize.MAX_CLUSTERS)
+    if not clusters:
+        return redirect(_back(back), msg="Non ci sono gruppi di spesa da classificare")
+    try:
+        suggestions = ai_categorize.suggest(session, clusters)
+    except (AIUnavailable, AIExtractionError) as exc:
+        return redirect(_back(back), err=str(exc))
+    n = ai_categorize.apply_suggestions(session, suggestions)
+    return redirect(
+        _back(back),
+        msg=f"Claude ha classificato {len(suggestions)} gruppi su {len(clusters)} (gli altri restano in \"Altro\"): aggiornati {n} movimenti. "
+            "Puoi correggere o eliminare le regole proposte in fondo alla pagina.",
     )
 
 
