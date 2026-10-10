@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "_macros.html" import amount, status_badge %}
+{% block title %}Entrate e uscite previste{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Entrate e uscite previste</h1>
+  <div class="muted">Voci manuali, generate dalle ricorrenze e dalle scadenze delle fatture.</div></div>
+</div>
+
+<details class="card" {{ 'open' if not rows }}>
+  <summary>+ Aggiungi voce prevista</summary>
+  <form method="post" action="/previsti/salva">
+    {% set item = none %}
+    {% include "_planned_fields.html" %}
+    <input type="hidden" name="back" value="/previsti">
+    <button>Aggiungi</button>
+  </form>
+</details>
+
+<form class="toolbar" method="get">
+  <input type="month" name="mese" value="{{ mese }}" onchange="this.form.submit()">
+  <select name="stato" onchange="this.form.submit()">
+    {% for v, l in [('previsto','Da pagare/incassare'), ('pagato','Pagate/incassate'), ('annullato','Annullate'), ('','Tutte')] %}
+    <option value="{{ v }}" {{ 'selected' if stato == v }}>{{ l }}</option>{% endfor %}
+  </select>
+  <select name="tipo" onchange="this.form.submit()">
+    <option value="">Entrate e uscite</option>
+    <option value="entrate" {{ 'selected' if tipo == 'entrate' }}>Solo entrate</option>
+    <option value="uscite" {{ 'selected' if tipo == 'uscite' }}>Solo uscite</option>
+  </select>
+  {% if mese %}<a href="/previsti?stato={{ stato }}">Rimuovi filtro mese</a>{% endif %}
+</form>
+
+<div class="card">
+  <div class="toolbar small"><span>{{ rows|length }} voci</span><span class="pos">Entrate {{ tot_in|eur }}</span><span>Uscite {{ (-tot_out)|eur }}</span></div>
+  {% if rows %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Data</th><th>Voce</th><th>Origine</th><th>Conto</th><th>Stato</th><th class="num">Importo</th><th></th></tr></thead>
+    <tbody>
+    {% for p in rows %}
+      <tr class="{{ 'past' if p.status != 'previsto' }}">
+        <td style="white-space:nowrap">{{ p.due_date|d }}{% if p.status == 'previsto' and p.due_date < today %} <span class="badge crit">scaduta</span>{% endif %}
+          {% if p.estimated_date %}<span class="badge warn" title="Data non presente in fattura: stimata">stimata</span>{% endif %}</td>
+        <td><a href="/previsti/{{ p.id }}">{{ p.title }}</a>{% if p.counterparty and p.counterparty not in p.title %}<div class="small muted">{{ p.counterparty }}</div>{% endif %}</td>
+        <td class="small">{{ p.source }}{% if p.category %} · {{ p.category }}{% endif %}</td>
+        <td class="small">{{ p.account.name if p.account else '—' }}</td>
+        <td>{{ status_badge(p.status) }}</td>
+        <td>{{ amount(p.amount_cents) }}</td>
+        <td class="actions">
+          {% if p.status == 'previsto' %}
+          <form method="post" action="/previsti/{{ p.id }}/stato"><input type="hidden" name="status" value="pagato"><input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}"><button class="small ghost" title="Segna come pagata/incassata senza abbinare un movimento">✓ fatto</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<div class="empty">Nessuna voce.</div>{% endif %}
+</div>
+{% endblock %}

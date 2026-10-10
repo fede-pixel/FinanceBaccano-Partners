@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_macros.html" import amount %}
+{% block title %}Movimenti{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Movimenti</h1><div class="muted">Movimenti reali di conti, carte e cassa.</div></div>
+  <a class="btn" href="/movimenti/import{{ '?conto=%d'|format(conto) if conto }}">Importa da file</a>
+</div>
+
+<form class="toolbar" method="get">
+  <select name="conto" onchange="this.form.submit()">
+    <option value="0">Tutti i conti</option>
+    {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if conto == a.id }}>{{ a.name }}</option>{% endfor %}
+  </select>
+  <input type="month" name="mese" value="{{ mese }}" onchange="this.form.submit()">
+  <input type="search" name="q" value="{{ q }}" placeholder="Cerca descrizione…">
+  <label class="check"><input type="checkbox" name="da_abbinare" value="1" {{ 'checked' if da_abbinare }} onchange="this.form.submit()"> Solo non abbinati</label>
+  <button class="ghost">Filtra</button>
+</form>
+
+<details class="card">
+  <summary>+ Registra un movimento a mano (es. pagamento/incasso in contanti)</summary>
+  <form class="inline" method="post" action="/movimenti/nuovo">
+    <div><label>Conto</label><select name="account_id">
+      {% for a in accounts if a.active %}<option value="{{ a.id }}" {{ 'selected' if conto == a.id or (not conto and a.kind == 'cassa') }}>{{ a.name }}</option>{% endfor %}
+    </select></div>
+    <div><label>Data</label><input type="date" name="tx_date" value="{{ today.isoformat() }}" required></div>
+    <div><label>Tipo</label><select name="direction"><option value="uscita">Uscita</option><option value="entrata">Entrata</option></select></div>
+    <div><label>Importo (€)</label><input name="amount" required size="10"></div>
+    <div><label>Descrizione</label><input name="description" size="28"></div>
+    <div><label>Controparte</label><input name="counterparty"></div>
+    <div><label>Categoria</label><input name="category" size="12"></div>
+    <button>Registra</button>
+  </form>
+</details>
+
+<div class="card">
+  <div class="toolbar small">
+    <span>{{ rows|length }} movimenti</span>
+    <span class="pos">Entrate {{ tot_in|eur }}</span>
+    <span>Uscite {{ (-tot_out)|eur }}</span>
+  </div>
+  {% if rows %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Data</th><th>Conto</th><th>Descrizione</th><th>Categoria</th><th>Abbinato a</th><th class="num">Importo</th><th></th></tr></thead>
+    <tbody>
+    {% for t in rows %}
+      <tr>
+        <td style="white-space:nowrap">{{ t.date|d }}</td>
+        <td class="small">{{ t.account.name }}</td>
+        <td>{{ t.description }}{% if t.counterparty %}<div class="small muted">{{ t.counterparty }}</div>{% endif %}</td>
+        <td><form method="post" action="/movimenti/{{ t.id }}/categoria"><input name="category" value="{{ t.category }}" size="10" onchange="this.form.submit()"></form></td>
+        <td class="small">{% if t.planned_item %}<a href="/previsti/{{ t.planned_item.id }}">{{ t.planned_item.title }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{{ amount(t.amount_cents) }}</td>
+        <td class="actions">
+          {% if t.import_batch %}<form method="post" action="/movimenti/import/{{ t.import_batch }}/annulla" data-confirm="Annullare l'intero import del {{ t.created_at|d }}? Verranno eliminati tutti i movimenti di quel file."><button class="small ghost" title="Annulla l'import da cui proviene">↶ import</button></form>{% endif %}
+          <form method="post" action="/movimenti/{{ t.id }}/elimina" data-confirm="Eliminare questo movimento?"><button class="small danger">×</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<div class="empty">Nessun movimento. <a href="/movimenti/import">Importa un estratto conto</a>.</div>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_macros.html" import amount %}
+{% block title %}Riconciliazione{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Riconciliazione</h1><div class="muted">Abbina i movimenti reali alle voci previste: le voci abbinate escono dal forecast (sono già nel saldo).</div></div>
+  {% if suggestions|selectattr('certain')|list %}
+  <form method="post" action="/riconciliazione/abbina-certi"><button>Abbina i {{ suggestions|selectattr('certain')|list|length }} abbinamenti certi</button></form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Abbinamenti suggeriti</h2>
+  {% if suggestions %}
+  <table>
+    <thead><tr><th>Movimento</th><th class="num">Importo</th><th>Voce prevista</th><th class="num">Importo</th><th></th></tr></thead>
+    <tbody>
+    {% for s in suggestions %}
+      <tr>
+        <td>{{ s.transaction.date|d }} · {{ s.transaction.description }}<div class="small muted">{{ s.transaction.account.name }}</div></td>
+        <td>{{ amount(s.transaction.amount_cents) }}</td>
+        <td>{{ s.item.due_date|d }} · <a href="/previsti/{{ s.item.id }}">{{ s.item.title }}</a>
+          {% if s.certain %}<span class="badge good">certo</span>{% else %}<span class="badge warn">da verificare</span>{% endif %}</td>
+        <td>{{ amount(s.item.amount_cents) }}</td>
+        <td class="actions"><form method="post" action="/riconciliazione/abbina">
+          <input type="hidden" name="tx_id" value="{{ s.transaction.id }}"><input type="hidden" name="item_id" value="{{ s.item.id }}">
+          <button class="small">Abbina</button></form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">Nessun suggerimento.</div>{% endif %}
+</div>
+
+<div class="card">
+  <h2>Movimenti degli ultimi 60 giorni senza abbinamento</h2>
+  <p class="small muted">Non tutti i movimenti devono essere abbinati (es. piccole spese con carta). Abbina solo quelli che corrispondono a una voce prevista.</p>
+  {% if unmatched %}
+  <table>
+    <thead><tr><th>Data</th><th>Movimento</th><th class="num">Importo</th><th>Abbina a</th></tr></thead>
+    <tbody>
+    {% for t in unmatched %}
+      <tr>
+        <td>{{ t.date|d }}</td>
+        <td>{{ t.description }}<div class="small muted">{{ t.account.name }}</div></td>
+        <td>{{ amount(t.amount_cents) }}</td>
+        <td>
+          {% set candidates = open_items|selectattr('amount_cents', '>', 0)|list if t.amount_cents > 0 else open_items|selectattr('amount_cents', '<', 0)|list %}
+          {% if candidates %}
+          <form class="inline" method="post" action="/riconciliazione/abbina">
+            <input type="hidden" name="tx_id" value="{{ t.id }}">
+            <select name="item_id">{% for p in candidates %}<option value="{{ p.id }}">{{ p.due_date|d }} · {{ p.title[:50] }} · {{ p.amount_cents|eur }}</option>{% endfor %}</select>
+            <button class="small ghost">Abbina</button>
+          </form>
+          {% else %}<span class="muted small">nessuna voce aperta</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">Tutto abbinato.</div>{% endif %}
+</div>
+{% endblock %}

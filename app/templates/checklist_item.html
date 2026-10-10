@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "_macros.html" import doc_badge %}
+{% block title %}{{ item.category.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>{{ item.category.name }}</h1>
+    <div class="muted">{{ period_label(item.period_key) }} · scadenza {{ item.due_date|d }} · {{ doc_badge(item, today) }}</div></div>
+  <a href="/documenti">← Scadenzario</a>
+</div>
+<p class="ink2">{{ item.category.description }}</p>
+
+<div class="grid grid-2" style="align-items:start">
+<div>
+  {% if item.category.auto_export %}
+  <div class="card">
+    <h2>Genera dai movimenti</h2>
+    <p class="small">Crea un file Excel per ogni {{ {'conto':'conto corrente','carta':'carta','cassa':'cassa contanti'}[item.category.auto_export] }} con i movimenti del periodo, saldo iniziale e finale. Rigenerandolo, i file generati prima vengono sostituiti.</p>
+    {% if item.category.auto_export == 'carta' %}<p class="small muted">Se il commercialista vuole l'estratto conto ufficiale della carta (PDF dell'emittente), caricalo anche qui sotto.</p>{% endif %}
+    <form method="post" action="/documenti/voce/{{ item.id }}/genera"><button>Genera Excel</button></form>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h2>Carica documenti</h2>
+    <form method="post" action="/documenti/voce/{{ item.id }}/carica" enctype="multipart/form-data">
+      <div class="dropzone field">
+        <div class="dz-label" data-empty="Trascina qui PDF, foto o scansioni (anche più file)">Trascina qui PDF, foto o scansioni (anche più file)</div>
+        <input type="file" name="files" multiple required style="margin-top:10px">
+      </div>
+      <details><summary>Dettagli opzionali (valgono per tutti i file caricati)</summary>
+        <div class="form-grid">
+          <div class="field"><label>Data documento</label><input type="date" name="doc_date"></div>
+          <div class="field"><label>Importo (€)</label><input name="amount"></div>
+          <div class="field"><label>Fornitore / controparte</label><input name="supplier"></div>
+          <div class="field"><label>Note</label><input name="notes"></div>
+        </div>
+      </details>
+      <button>Carica</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Stato</h2>
+    <form method="post" action="/documenti/voce/{{ item.id }}/stato">
+      <div class="field"><label>Note per il commercialista</label><textarea name="notes" placeholder="es. Nessun assegno emesso nel mese">{{ item.notes }}</textarea></div>
+      <div class="toolbar">
+        <button name="status" value="{{ item.status }}" class="ghost">Salva note</button>
+        {% if item.status != 'non_applicabile' %}<button name="status" value="non_applicabile" class="ghost">Nessuna operazione nel periodo</button>{% endif %}
+        {% if item.status != 'completato' %}<button name="status" value="completato" class="ghost">Segna pronto</button>{% endif %}
+        {% if item.status != 'inviato' %}<button name="status" value="inviato" class="ghost">Segna inviato</button>{% endif %}
+        {% if item.status != 'da_fare' %}<button name="status" value="da_fare" class="ghost">Riporta a "da fare"</button>{% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Documenti ({{ item.documents|length }})</h2>
+  {% if item.documents %}
+  <table>
+    <thead><tr><th>File</th><th>Dettagli</th><th></th></tr></thead>
+    <tbody>
+    {% for d in item.documents %}
+      <tr>
+        <td><a href="/documenti/file/{{ d.id }}" target="_blank">{{ d.file_name }}</a>
+          <div class="small muted">{{ (d.size / 1024)|round(1) }} KB · {{ d.uploaded_at|d }}{% if d.generated %} · generato{% endif %}</div></td>
+        <td class="small">{% if d.doc_date %}{{ d.doc_date|d }} {% endif %}{% if d.amount_cents is not none %}{{ d.amount_cents|eur }} {% endif %}{{ d.supplier }}{% if d.notes %}<div class="muted">{{ d.notes }}</div>{% endif %}</td>
+        <td class="actions"><form method="post" action="/documenti/file/{{ d.id }}/elimina" data-confirm="Eliminare il file?"><button class="small danger">×</button></form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">Nessun documento caricato.</div>{% endif %}
+  <form method="post" action="/apri-cartella" style="margin-top:12px">
+    <input type="hidden" name="path" value="{{ folder }}"><input type="hidden" name="back" value="/documenti/voce/{{ item.id }}">
+    <span class="small muted">Cartella: <code>{{ folder }}</code></span>
+    {% if item.documents %}<button class="small ghost">Apri cartella</button>{% endif %}
+  </form>
+</div>
+</div>
+{% endblock %}

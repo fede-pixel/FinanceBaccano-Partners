@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% from "_macros.html" import amount, status_badge %}
+{% block title %}Fatture{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Fatture elettroniche</h1><div class="muted">Importa gli XML di Aruba: ogni scadenza di pagamento diventa un'entrata o un'uscita prevista.</div></div>
+</div>
+{% if not company_vat %}<div class="alert warn">Imposta la <a href="/impostazioni">P.IVA aziendale</a>: serve a capire se una fattura è emessa (attiva) o ricevuta (passiva).</div>{% endif %}
+<div class="grid grid-2">
+<div class="card">
+  <h2>Importa</h2>
+  <form method="post" action="/fatture/import" enctype="multipart/form-data">
+    <div class="dropzone field">
+      <div class="dz-label" data-empty="Trascina qui XML, P7M o ZIP">Trascina qui XML, P7M o ZIP</div>
+      <input type="file" name="files" multiple accept=".xml,.p7m,.zip" required style="margin-top:10px">
+    </div>
+    <div class="form-grid">
+      <div class="field"><label>Tipo</label><select name="direction">
+        <option value="auto">Automatico (da P.IVA)</option><option value="attiva">Tutte attive (emesse)</option><option value="passiva">Tutte passive (ricevute)</option></select></div>
+      <div class="field"><label>Conto previsto</label><select name="account_id"><option value="0">— qualsiasi —</option>
+        {% for a in accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></div>
+      <div class="field"><label>Già saldate se scadute prima del</label><input type="date" name="paid_before"></div>
+    </div>
+    <p class="small muted">Al primo import dello storico indica la data da cui partire: le scadenze precedenti vengono considerate già pagate e non sporcano il forecast.</p>
+    <button>Importa</button>
+  </form>
+</div>
+<div class="card small">
+  <h3>Come esportare da Aruba</h3>
+  <p>Dal pannello di Aruba Fatturazione Elettronica seleziona le fatture (emesse o ricevute) e scarica i file XML (o un archivio ZIP). Puoi caricare qui anche i file firmati <code>.p7m</code>.</p>
+  <p>Se la fattura non indica la data di scadenza, l'app la stima a 30 giorni dalla data fattura (valore modificabile nelle Impostazioni) e la segna come "stimata".</p>
+  <p class="muted">In una fase successiva potremo collegare direttamente le API di Aruba, così le fatture arrivano da sole.</p>
+</div>
+</div>
+
+<form class="toolbar" method="get">
+  <select name="direzione" onchange="this.form.submit()">
+    <option value="">Attive e passive</option>
+    <option value="attiva" {{ 'selected' if direzione == 'attiva' }}>Solo attive (emesse)</option>
+    <option value="passiva" {{ 'selected' if direzione == 'passiva' }}>Solo passive (ricevute)</option>
+  </select>
+</form>
+<div class="card">
+  {% if rows %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Data</th><th>Numero</th><th>Tipo</th><th>Controparte</th><th>Scadenze</th><th class="num">Totale</th><th></th></tr></thead>
+    <tbody>
+    {% for inv in rows %}
+      <tr>
+        <td>{{ inv.date|d }}</td>
+        <td>{{ inv.number }}<div class="small muted">{{ inv.doc_type }}</div></td>
+        <td>{% if inv.direction == 'attiva' %}<span class="badge info">Attiva</span>{% else %}<span class="badge serious">Passiva</span>{% endif %}</td>
+        <td>{{ inv.counterparty }}<div class="small muted">{{ inv.counterparty_vat }}</div></td>
+        <td class="small">{% for p in inv.planned_items %}<div><a href="/previsti/{{ p.id }}">{{ p.due_date|d }}</a> {{ p.amount_cents|eur_sign }} {{ status_badge(p.status) }}</div>{% endfor %}</td>
+        <td class="num">{{ inv.total_cents|eur }}</td>
+        <td class="actions"><form method="post" action="/fatture/{{ inv.id }}/elimina" data-confirm="Eliminare la fattura e le sue scadenze?"><button class="small danger">×</button></form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<div class="empty">Nessuna fattura importata.</div>{% endif %}
+</div>
+{% endblock %}

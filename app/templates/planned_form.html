@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "_macros.html" import amount, status_badge %}
+{% block title %}{{ item.title }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>{{ item.title }}</h1><div class="muted">{{ status_badge(item.status) }} · origine: {{ item.source }}{% if item.paid_date %} · saldata il {{ item.paid_date|d }}{% endif %}</div></div><a href="/previsti">← Previsti</a></div>
+<div class="grid grid-2">
+<div class="card">
+  {% if item.recurrence_id %}<div class="alert info small">Generata dalla <a href="/ricorrenze?edit={{ item.recurrence_id }}">ricorrenza</a>. Se la modifichi qui, cambi solo questa occorrenza: per cambi permanenti modifica la ricorrenza.</div>{% endif %}
+  {% if item.invoice %}<div class="alert info small">Da fattura {{ item.invoice.direction }} n. {{ item.invoice.number }} del {{ item.invoice.date|d }} – {{ item.invoice.counterparty }} (totale {{ item.invoice.total_cents|eur }}){% if item.notes %} · {{ item.notes }}{% endif %}</div>{% endif %}
+  <form method="post" action="/previsti/salva">
+    <input type="hidden" name="item_id" value="{{ item.id }}">
+    <input type="hidden" name="back" value="/previsti/{{ item.id }}">
+    {% include "_planned_fields.html" %}
+    <div class="field"><label>Note</label><textarea name="notes">{{ item.notes }}</textarea></div>
+    <button>Salva</button>
+  </form>
+  <div class="toolbar" style="margin-top:14px">
+    {% for s, l in [('previsto','Riporta a previsto'), ('pagato','Segna pagato/incassato'), ('annullato','Annulla')] if s != item.status %}
+    <form method="post" action="/previsti/{{ item.id }}/stato"><input type="hidden" name="status" value="{{ s }}"><input type="hidden" name="back" value="/previsti/{{ item.id }}"><button class="ghost small">{{ l }}</button></form>
+    {% endfor %}
+    <form method="post" action="/previsti/{{ item.id }}/elimina" data-confirm="Eliminare questa voce?"><button class="danger small">Elimina</button></form>
+  </div>
+</div>
+<div class="card">
+  <h2>Movimenti abbinati</h2>
+  {% if item.transactions %}
+  <table><tbody>
+  {% for t in item.transactions %}
+    <tr><td>{{ t.date|d }}</td><td>{{ t.description }}<div class="small muted">{{ t.account.name }}</div></td><td>{{ amount(t.amount_cents) }}</td>
+      <td class="actions"><form method="post" action="/riconciliazione/separa"><input type="hidden" name="tx_id" value="{{ t.id }}"><input type="hidden" name="back" value="/previsti/{{ item.id }}"><button class="small ghost">Separa</button></form></td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% else %}<div class="empty">Nessun movimento abbinato. Gli abbinamenti si fanno da <a href="/riconciliazione">Riconciliazione</a>.</div>{% endif %}
+</div>
+</div>
+{% endblock %}

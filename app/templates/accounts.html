@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Conti e carte{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Conti e carte</h1><div class="muted">Conti correnti, carte di credito/prepagate e cassa contanti.</div></div>
+  <a class="btn" href="/conti/nuovo">+ Nuovo conto</a>
+</div>
+<div class="card">
+  {% if statuses %}
+  <table>
+    <thead><tr><th>Nome</th><th>Tipo</th><th>IBAN</th><th>Ultimo movimento</th><th>Forecast</th><th class="num">Saldo oggi</th><th></th></tr></thead>
+    <tbody>
+    {% for s in statuses %}
+      <tr>
+        <td><span class="dot" style="background: {{ s.account.color }}"></span><strong>{{ s.account.name }}</strong><div class="small muted">{{ s.account.bank }}</div></td>
+        <td>{{ s.account.kind_label }}{% if s.account.currency != 'EUR' %} · {{ s.account.currency }}{% endif %}</td>
+        <td class="small">{{ s.account.iban }}</td>
+        <td>{{ s.last_tx_date|d if s.last_tx_date else '—' }}</td>
+        <td>{{ 'Sì' if s.account.include_in_forecast and s.account.currency == 'EUR' else 'No' }}</td>
+        <td class="num">{{ s.balance|eur }}</td>
+        <td class="actions">
+          <a class="btn btn-small btn-ghost" href="/movimenti/import?conto={{ s.account.id }}">Importa</a>
+          <a class="btn btn-small btn-ghost" href="/conti/{{ s.account.id }}">Modifica</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">Nessun conto ancora. Suggerimento: crea "Vivid", "Revolut Business", "BCC" (conti), le carte collegate e una "Cassa contanti".</div>{% endif %}
+</div>
+{% if inactive %}
+<div class="card"><h3>Disattivati</h3>
+  {% for a in inactive %}<a href="/conti/{{ a.id }}">{{ a.name }}</a>{{ ", " if not loop.last }}{% endfor %}
+</div>
+{% endif %}
+<div class="alert info small">
+  Il saldo viene calcolato dall'ultimo <em>saldo certo</em> che inserisci (o che arriva dalla colonna "saldo" del file importato) più i movimenti successivi.
+  Per Revolut Business l'export CSV include la colonna <code>Balance</code>, quindi il saldo si aggiorna da solo a ogni import.
+</div>
+{% endblock %}

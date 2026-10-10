@@ -1,0 +1,15 @@
+<div class="form-grid">
+  <div class="field" style="grid-column: span 2"><label>Descrizione</label><input name="title" required value="{{ item.title if item }}" placeholder="es. Saldo fornitore X"></div>
+  <div class="field"><label>Tipo</label><select name="direction">
+    <option value="uscita" {{ 'selected' if item and item.amount_cents < 0 }}>Uscita</option>
+    <option value="entrata" {{ 'selected' if item and item.amount_cents > 0 }}>Entrata</option>
+  </select></div>
+  <div class="field"><label>Importo (€)</label><input name="amount" required value="{{ (item.amount_cents|abs)|cents_input if item }}"></div>
+  <div class="field"><label>Data prevista</label><input type="date" name="due_date" required value="{{ item.due_date.isoformat() if item else today.isoformat() }}"></div>
+  <div class="field"><label>Conto</label><select name="account_id">
+    <option value="0">— qualsiasi —</option>
+    {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if item and item.account_id == a.id }}>{{ a.name }}</option>{% endfor %}
+  </select></div>
+  <div class="field"><label>Controparte</label><input name="counterparty" value="{{ item.counterparty if item }}"></div>
+  <div class="field"><label>Categoria</label><input name="category" value="{{ item.category if item }}" placeholder="es. Fornitori, Tasse"></div>
+</div>

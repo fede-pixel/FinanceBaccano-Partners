@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "_macros.html" import amount %}
+{% block title %}Ricorrenze{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Ricorrenze</h1><div class="muted">Entrate e uscite che si ripetono: stipendi, F24, affitto, leasing, abbonamenti, canoni clienti… Generano le voci previste per i prossimi 13 mesi.</div></div>
+</div>
+<div class="grid grid-2">
+<div class="card">
+  <h2>{{ 'Modifica ricorrenza' if current else 'Nuova ricorrenza' }}</h2>
+  <form method="post" action="/ricorrenze/salva">
+    <input type="hidden" name="rec_id" value="{{ current.id if current else 0 }}">
+    <div class="form-grid">
+      <div class="field" style="grid-column: span 2"><label>Descrizione</label><input name="title" required value="{{ current.title if current }}" placeholder="es. Stipendi dipendenti"></div>
+      <div class="field"><label>Tipo</label><select name="direction">
+        <option value="uscita" {{ 'selected' if current and current.amount_cents < 0 }}>Uscita</option>
+        <option value="entrata" {{ 'selected' if current and current.amount_cents > 0 }}>Entrata</option></select></div>
+      <div class="field"><label>Importo (€)</label><input name="amount" required value="{{ (current.amount_cents|abs)|cents_input if current }}"></div>
+      <div class="field"><label>Frequenza</label><select name="frequency">
+        {% for k, l in frequencies.items() %}<option value="{{ k }}" {{ 'selected' if (current and current.frequency == k) or (not current and k == 'mensile') }}>{{ l }}</option>{% endfor %}</select></div>
+      <div class="field"><label>Giorno del mese</label><input type="number" min="1" max="31" name="day_of_month" value="{{ current.day_of_month if current else 27 }}"></div>
+      <div class="field"><label>Dal</label><input type="date" name="start_date" value="{{ current.start_date.isoformat() if current else today.replace(day=1).isoformat() }}"></div>
+      <div class="field"><label>Fino al (opzionale)</label><input type="date" name="end_date" value="{{ current.end_date.isoformat() if current and current.end_date }}"></div>
+      <div class="field"><label>Se cade nel weekend/festivo</label><select name="business_day_rule">
+        {% for v, l in [('nessuna','Lascia la data'), ('successivo','Giorno lavorativo successivo'), ('precedente','Giorno lavorativo precedente')] %}
+        <option value="{{ v }}" {{ 'selected' if current and current.business_day_rule == v }}>{{ l }}</option>{% endfor %}</select></div>
+      <div class="field"><label>Conto</label><select name="account_id"><option value="0">— qualsiasi —</option>
+        {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if current and current.account_id == a.id }}>{{ a.name }}</option>{% endfor %}</select></div>
+      <div class="field"><label>Categoria</label><input name="category" value="{{ current.category if current }}" placeholder="es. Personale, Tasse"></div>
+    </div>
+    <p class="small muted">Per la settimanale, il "Dal" è il primo giorno della serie. Il giorno 31 nei mesi più corti diventa l'ultimo del mese.</p>
+    {% if current %}<div class="field"><label class="check"><input type="checkbox" name="active" value="1" {{ 'checked' if current.active }}> Attiva</label></div>{% endif %}
+    <div class="field"><label>Note</label><textarea name="notes">{{ current.notes if current }}</textarea></div>
+    <button>Salva</button> {% if current %}<a href="/ricorrenze" class="btn btn-ghost">Annulla</a>{% endif %}
+  </form>
+</div>
+<div class="card">
+  <h2>Ricorrenze attive</h2>
+  <p class="small muted">Impatto medio mensile: <strong>{{ monthly_total|eur_sign }}</strong></p>
+  {% if rows %}
+  <table>
+    <thead><tr><th>Voce</th><th>Quando</th><th class="num">Importo</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr class="{{ 'past' if not r.active }}">
+        <td><a href="/ricorrenze?edit={{ r.id }}">{{ r.title }}</a><div class="small muted">{{ r.category }}{% if r.account %} · {{ r.account.name }}{% endif %}{% if not r.active %} · disattivata{% endif %}</div></td>
+        <td class="small">{{ frequencies[r.frequency] }}{% if r.frequency != 'settimanale' %}, giorno {{ r.day_of_month }}{% endif %}{% if r.end_date %}<br>fino al {{ r.end_date|d }}{% endif %}</td>
+        <td>{{ amount(r.amount_cents) }}</td>
+        <td class="actions"><form method="post" action="/ricorrenze/{{ r.id }}/elimina" data-confirm="Eliminare la ricorrenza e le sue scadenze future?"><button class="small danger">×</button></form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">Nessuna ricorrenza.</div>{% endif %}
+</div>
+</div>
+{% endblock %}

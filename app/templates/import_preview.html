@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "_macros.html" import amount %}
+{% block title %}Anteprima import{% endblock %}
+{% macro col_select(name, value, allow_empty=true) -%}
+<select name="{{ name }}">
+  {% if allow_empty %}<option value="">—</option>{% endif %}
+  {% for h in header %}<option value="{{ h }}" {{ 'selected' if h == value }}>{{ h }}</option>{% endfor %}
+</select>
+{%- endmacro %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Anteprima import – {{ account.name }}</h1>
+  <div class="muted">Controlla che le colonne siano collegate correttamente, poi conferma.</div></div>
+  <a href="/movimenti/import?conto={{ account.id }}">← Scegli un altro file</a>
+</div>
+
+<form method="post" action="/movimenti/import/{{ token }}?conto={{ account.id }}" id="mapform">
+<div class="card">
+  <h2>Collegamento colonne</h2>
+  <div class="form-grid">
+    <div class="field"><label>Riga intestazione (n° riga del file − 1)</label><input type="number" min="0" name="header_row" value="{{ profile.header_row }}"></div>
+    <div class="field"><label>Colonna data</label>{{ col_select('date_col', profile.date_col, false) }}</div>
+    <div class="field"><label>Formato data</label><select name="date_format">
+      {% for f, l in [('auto','Automatico'), ('%d/%m/%Y','gg/mm/aaaa'), ('%Y-%m-%d','aaaa-mm-gg'), ('%m/%d/%Y','mm/gg/aaaa (USA)'), ('%d.%m.%Y','gg.mm.aaaa')] %}
+      <option value="{{ f }}" {{ 'selected' if profile.date_format == f }}>{{ l }}</option>{% endfor %}
+    </select></div>
+    <div class="field"><label>Importi</label><select name="amount_mode">
+      <option value="single" {{ 'selected' if profile.amount_mode == 'single' }}>Una colonna con segno (+/−)</option>
+      <option value="split" {{ 'selected' if profile.amount_mode == 'split' }}>Due colonne (entrate / uscite)</option>
+    </select></div>
+    <div class="field"><label>Colonna importo (se una colonna)</label>{{ col_select('amount_col', profile.amount_col) }}</div>
+    <div class="field"><label>Colonna entrate / avere</label>{{ col_select('in_col', profile.in_col) }}</div>
+    <div class="field"><label>Colonna uscite / dare</label>{{ col_select('out_col', profile.out_col) }}</div>
+    <div class="field"><label>Separatore decimali</label><select name="decimal_sep">
+      <option value="auto" {{ 'selected' if profile.decimal_sep == 'auto' }}>Automatico</option>
+      <option value="," {{ 'selected' if profile.decimal_sep == ',' }}>Virgola (1.234,56)</option>
+      <option value="." {{ 'selected' if profile.decimal_sep == '.' }}>Punto (1,234.56)</option>
+    </select></div>
+    <div class="field"><label>Descrizione (puoi sceglierne più di una)</label>
+      <select name="desc_cols" multiple size="3">{% for h in header %}<option value="{{ h }}" {{ 'selected' if h in profile.desc_cols }}>{{ h }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Controparte</label>{{ col_select('counterparty_col', profile.counterparty_col) }}</div>
+    <div class="field"><label>ID transazione (evita doppioni)</label>{{ col_select('id_col', profile.id_col) }}</div>
+    <div class="field"><label>Colonna saldo</label>{{ col_select('balance_col', profile.balance_col) }}</div>
+    <div class="field"><label>Colonna stato</label>{{ col_select('status_col', profile.status_col) }}</div>
+    <div class="field"><label>…importa solo con stato</label><input name="status_ok" value="{{ profile.status_ok }}" placeholder="es. COMPLETED"></div>
+  </div>
+  <label class="check"><input type="checkbox" name="invert_sign" value="1" {{ 'checked' if profile.invert_sign }}> Inverti il segno (alcune carte esportano le spese come positive)</label>
+  <div class="toolbar" style="margin-top:12px"><button class="ghost">Aggiorna anteprima</button></div>
+</div>
+
+<div class="card">
+  <h2>Risultato: {{ parsed_count }} movimenti riconosciuti · totale {{ total|eur_sign }}</h2>
+  {% if errors %}
+  <div class="alert warn small">{{ error_count }} righe non lette:<br>{% for e in errors %}{{ e }}<br>{% endfor %}</div>
+  {% endif %}
+  {% if parsed %}
+  <table>
+    <thead><tr><th>Data</th><th>Descrizione</th><th>Controparte</th><th class="num">Importo</th><th class="num">Saldo</th></tr></thead>
+    <tbody>
+    {% for t in parsed %}
+      <tr><td>{{ t.date|d }}</td><td>{{ t.description }}</td><td class="small">{{ t.counterparty }}</td><td>{{ amount(t.amount_cents) }}</td>
+        <td class="num small">{{ t.balance_cents|eur if t.balance_cents is not none }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if parsed_count > parsed|length %}<p class="small muted">…e altri {{ parsed_count - parsed|length }}.</p>{% endif %}
+  <div class="toolbar" style="margin-top:14px">
+    {% if profile.balance_col %}<label class="check"><input type="checkbox" name="update_balance" value="1" checked> Aggiorna il saldo del conto dalla colonna saldo</label>{% endif %}
+    <button formaction="/movimenti/import/{{ token }}/conferma?conto={{ account.id }}">Importa {{ parsed_count }} movimenti</button>
+  </div>
+  {% endif %}
+</div>
+</form>
+
+<details class="card">
+  <summary>File originale (prime righe)</summary>
+  <div class="table-wrap"><table class="small">
+    {% for r in rows %}<tr><td class="muted">{{ loop.index0 }}</td>{% for c in r %}<td>{{ c }}</td>{% endfor %}</tr>{% endfor %}
+  </table></div>
+</details>
+{% endblock %}

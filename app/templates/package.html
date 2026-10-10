@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_macros.html" import doc_badge %}
+{% block title %}Pacchetto commercialista{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Pacchetto per il commercialista</h1><div class="muted">Raccoglie in uno ZIP ordinato tutti i documenti del mese (più gli estratti conto trimestrali pronti).</div></div>
+  <form method="get"><select name="mese" onchange="this.form.submit()">
+    {% for m in months %}<option value="{{ m }}" {{ 'selected' if m == mese }}>{{ period_label(m) }}</option>{% endfor %}
+  </select></form>
+</div>
+
+{% if missing %}
+<div class="alert warn"><strong>Mancano ancora {{ missing|length }} voci:</strong>
+  {% for it in missing %}<a href="/documenti/voce/{{ it.id }}">{{ it.category.name }}</a>{{ ", " if not loop.last }}{% endfor %}.
+  Carica i documenti o segnale come "Nessuna operazione nel periodo".</div>
+{% endif %}
+
+<div class="card">
+  <h2>{{ period_label(mese) }}</h2>
+  {% for it in items %}
+  <div class="doc-row">
+    <div><a href="/documenti/voce/{{ it.id }}"><strong>{{ it.category.name }}</strong></a>{% if '-Q' in it.period_key %} <span class="small muted">({{ period_label(it.period_key) }})</span>{% endif %}
+      <div class="small muted">{% for d in it.documents %}{{ d.file_name }}{{ ", " if not loop.last }}{% endfor %}</div></div>
+    <div class="small muted">{{ it.documents|length }} file</div>
+    <div>{{ doc_badge(it, today) }}</div>
+    <div></div>
+  </div>
+  {% else %}<div class="empty">Nessuna voce per questo mese: controlla il mese di partenza nelle Impostazioni.</div>{% endfor %}
+</div>
+
+<div class="grid grid-3">
+  <div class="card">
+    <h3>1 · Crea lo ZIP</h3>
+    <form method="post" action="/pacchetto/crea"><input type="hidden" name="mese" value="{{ mese }}"><button>{{ 'Ricrea' if zip_exists else 'Crea' }} pacchetto</button></form>
+    {% if zip_exists %}
+      <p class="small" style="margin-top:8px"><a href="/pacchetto/scarica?mese={{ mese }}">Scarica lo ZIP</a></p>
+      <form method="post" action="/apri-cartella"><input type="hidden" name="path" value="{{ zip_path }}"><input type="hidden" name="back" value="/pacchetto?mese={{ mese }}"><button class="small ghost">Apri cartella</button></form>
+    {% endif %}
+    <p class="small muted" style="margin-top:8px">Salvato in <code>{{ packages_dir }}</code>. Se in Impostazioni imposti come cartella pacchetti una cartella di Google Drive sincronizzata, lo ZIP arriva su Drive da solo.</p>
+  </div>
+  <div class="card">
+    <h3>2 · Invia l'email</h3>
+    <p class="small">Apre il tuo programma di posta con oggetto e testo già scritti: allega lo ZIP (o il link Drive) e invia.</p>
+    <a class="btn" href="{{ mailto }}">Prepara email</a>
+  </div>
+  <div class="card">
+    <h3>3 · Segna come inviato</h3>
+    <p class="small">Aggiorna lo scadenzario: le voci con documenti, o senza operazioni, passano a "Inviato".</p>
+    <form method="post" action="/pacchetto/inviato" data-confirm="Segnare come inviati i documenti del pacchetto?"><input type="hidden" name="mese" value="{{ mese }}"><button class="ghost">Segna inviato</button></form>
+  </div>
+</div>
+{% endblock %}

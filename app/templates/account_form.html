@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ account.name if account else 'Nuovo conto' }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ account.name if account else 'Nuovo conto' }}</h1><a href="/conti">← Conti</a></div>
+<div class="grid grid-2">
+<div class="card">
+  <form method="post" action="/conti/salva">
+    <input type="hidden" name="account_id" value="{{ account.id if account else 0 }}">
+    <div class="form-grid">
+      <div class="field"><label>Nome</label><input name="name" required value="{{ account.name if account }}" placeholder="es. Revolut Business EUR"></div>
+      <div class="field"><label>Banca / emittente</label><input name="bank" value="{{ account.bank if account }}" placeholder="Vivid, Revolut, BCC…"></div>
+      <div class="field"><label>Tipo</label><select name="kind">
+        {% for k, l in kinds.items() %}<option value="{{ k }}" {{ 'selected' if account and account.kind == k }}>{{ l }}</option>{% endfor %}
+      </select></div>
+      <div class="field"><label>Valuta</label><input name="currency" value="{{ account.currency if account else 'EUR' }}" maxlength="3"></div>
+      <div class="field"><label>IBAN / ultime cifre carta</label><input name="iban" value="{{ account.iban if account }}"></div>
+      <div class="field"><label>Colore</label><input type="color" name="color" value="{{ account.color if account else '#2a78d6' }}"></div>
+    </div>
+    {% if not account %}
+    <div class="form-grid">
+      <div class="field"><label>Saldo iniziale (€)</label><input name="opening_balance" placeholder="0,00"></div>
+      <div class="field"><label>…alla data (fine giornata)</label><input type="date" name="opening_date" value="{{ today.isoformat() }}"></div>
+    </div>
+    <p class="small muted">Consiglio: indica il saldo al giorno prima del primo movimento che importerai.</p>
+    {% endif %}
+    <div class="field"><label class="check"><input type="checkbox" name="include_in_forecast" value="1" {{ 'checked' if not account or account.include_in_forecast }}> Includi nel forecast di liquidità</label></div>
+    {% if account %}<div class="field"><label class="check"><input type="checkbox" name="active" value="1" {{ 'checked' if account.active }}> Attivo</label></div>{% endif %}
+    <div class="field"><label>Note</label><textarea name="notes">{{ account.notes if account }}</textarea></div>
+    <button>Salva</button>
+  </form>
+  {% if account %}
+  <form method="post" action="/conti/{{ account.id }}/elimina" data-confirm="Eliminare il conto? Se ha movimenti verrà solo disattivato." style="margin-top:12px">
+    <button class="danger">Elimina conto</button>
+  </form>
+  {% endif %}
+</div>
+{% if account %}
+<div class="card">
+  <h2>Saldi certi</h2>
+  <p class="small muted">Inserisci il saldo letto dall'home banking per riallineare il calcolo (es. dopo un periodo senza import).</p>
+  <form class="inline" method="post" action="/conti/{{ account.id }}/saldo">
+    <div><label>Data</label><input type="date" name="snap_date" value="{{ today.isoformat() }}"></div>
+    <div><label>Saldo (€)</label><input name="balance" required placeholder="12.345,67"></div>
+    <button>Registra</button>
+  </form>
+  <table style="margin-top:12px">
+    <thead><tr><th>Data</th><th>Origine</th><th class="num">Saldo</th><th></th></tr></thead>
+    <tbody>
+    {% for s in account.snapshots|reverse %}
+      <tr><td>{{ s.date|d }}</td><td>{{ s.source }}</td><td class="num">{{ s.balance_cents|eur }}</td>
+        <td class="actions"><form method="post" action="/conti/{{ account.id }}/saldo/{{ s.id }}/elimina" data-confirm="Eliminare questo saldo?"><button class="small danger">×</button></form></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+</div>
+{% endblock %}

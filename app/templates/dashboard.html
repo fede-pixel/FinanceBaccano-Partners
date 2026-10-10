@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% from "_macros.html" import amount, forecast_chart, doc_badge %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Dashboard</h1>
+    <div class="muted">{{ today|wd }} {{ today|d }}</div>
+  </div>
+  <div class="toolbar" style="margin:0">
+    <a class="btn" href="/movimenti/import">Importa movimenti</a>
+    <a class="btn btn-ghost" href="/fatture">Importa fatture</a>
+  </div>
+</div>
+
+{% if not has_accounts %}
+<div class="alert info">
+  <strong>Primi passi.</strong>
+  1) Inserisci i dati aziendali nelle <a href="/impostazioni">Impostazioni</a> (P.IVA ed email del commercialista).
+  2) Crea i tuoi <a href="/conti/nuovo">conti e carte</a> (Vivid, Revolut Business, BCC, cassa contanti) con il saldo iniziale.
+  3) <a href="/movimenti/import">Importa i movimenti</a> e le <a href="/fatture">fatture XML di Aruba</a>.
+  4) Aggiungi le <a href="/ricorrenze">uscite ricorrenti</a> (stipendi, F24, affitto…).
+</div>
+{% endif %}
+
+{% if deadlines %}
+<div class="alert {{ 'err' if deadlines|selectattr('overdue')|list else 'warn' }}">
+  <strong>Documenti per il commercialista:</strong>
+  {% for dl in deadlines[:6] %}
+    <a href="/documenti/voce/{{ dl.item.id }}">{{ dl.item.category.name }} ({{ period_label(dl.item.period_key) }})</a>
+    – {% if dl.overdue %}<span class="crit">scaduto da {{ -dl.days_left }} gg</span>{% else %}entro {{ dl.days_left }} gg{% endif %}{{ "," if not loop.last }}
+  {% endfor %}
+  {% if deadlines|length > 6 %} e altri {{ deadlines|length - 6 }}.{% endif %}
+  <a href="/documenti">Vai allo scadenzario →</a>
+</div>
+{% endif %}
+
+<div class="kpis">
+  <div class="kpi">
+    <div class="label">Liquidità oggi</div>
+    <div class="value">{{ fc.balance_today|eur }}</div>
+    <div class="sub">somma dei conti inclusi nel forecast</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Saldo previsto a fine {{ month_title|lower }}</div>
+    <div class="value">{{ fc.end_balance|eur }}</div>
+    <div class="sub">entrate {{ fc.planned_in|eur }} · uscite {{ (-fc.planned_out)|eur }}</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Minimo nei prossimi 30 giorni</div>
+    <div class="value {{ 'crit' if next30.min_balance is not none and next30.min_balance < next30.threshold }}">{{ next30.min_balance|eur }}</div>
+    <div class="sub">{% if next30.min_date %}il {{ next30.min_date|d }}{% endif %}{% if next30.threshold %} · soglia {{ next30.threshold|eur }}{% endif %}</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Scaduti non ancora pagati/incassati</div>
+    <div class="value">{{ fc.overdue|length }}</div>
+    <div class="sub">{% if fc.overdue %}saldo {{ fc.overdue_total|eur_sign }} · <a href="/riconciliazione">riconcilia</a>{% else %}tutto in ordine{% endif %}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="page-head" style="margin-bottom:8px">
+    <h2 style="margin:0">Liquidità – {{ month_title }}</h2>
+    <a href="/forecast">Dettaglio giorno per giorno →</a>
+  </div>
+  {{ forecast_chart(chart, "dash-chart", bars=false) }}
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Conti e carte</h2>
+    {% if statuses %}
+    <table>
+      <thead><tr><th>Conto</th><th>Aggiornato al</th><th class="num">Saldo</th></tr></thead>
+      <tbody>
+      {% for s in statuses %}
+        <tr>
+          <td><span class="dot" style="background: {{ s.account.color }}"></span><a href="/movimenti?conto={{ s.account.id }}">{{ s.account.name }}</a>
+            <div class="small muted">{{ s.account.bank }} · {{ s.account.kind_label }}{% if not s.account.include_in_forecast %} · escluso dal forecast{% endif %}{% if s.account.currency != 'EUR' %} · {{ s.account.currency }}{% endif %}</div></td>
+          <td>
+            {% set last = [s.last_tx_date, s.last_snapshot]|select|max if (s.last_tx_date or s.last_snapshot) else none %}
+            {% if last %}{{ last|d }}{% if last < stale_after %} <span class="badge warn">da aggiornare</span>{% endif %}{% else %}<span class="muted">mai</span>{% endif %}
+          </td>
+          <td class="num">{{ s.balance|eur }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="empty">Nessun conto. <a href="/conti/nuovo">Aggiungine uno</a>.</div>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Prossimi 14 giorni</h2>
+    {% if upcoming %}
+    <table>
+      <thead><tr><th>Data</th><th>Voce</th><th class="num">Importo</th></tr></thead>
+      <tbody>
+      {% for p in upcoming %}
+        <tr>
+          <td>{{ p.due_date|wd }} {{ p.due_date|d }}</td>
+          <td><a href="/previsti/{{ p.id }}">{{ p.title }}</a>{% if p.estimated_date %} <span class="badge warn" title="Scadenza non indicata in fattura: stimata">stimata</span>{% endif %}</td>
+          <td>{{ amount(p.amount_cents) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="empty">Nessuna entrata o uscita prevista.</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

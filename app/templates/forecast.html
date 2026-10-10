@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_macros.html" import amount, forecast_chart %}
+{% block title %}Forecast{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Forecast liquidità – {{ title }}</h1>
+    <div class="muted">Saldo reale fino a oggi, poi saldo previsto = saldo di oggi + entrate previste − uscite previste.</div>
+  </div>
+</div>
+
+<form class="toolbar" method="get">
+  {% if not giorni %}
+  <a class="btn btn-ghost" href="?mese={{ prev_mese }}&conto={{ conto }}">← Mese prec.</a>
+  <input type="month" name="mese" value="{{ mese }}" onchange="this.form.submit()">
+  <a class="btn btn-ghost" href="?mese={{ next_mese }}&conto={{ conto }}">Mese succ. →</a>
+  {% endif %}
+  <select name="giorni" onchange="this.form.submit()">
+    <option value="0" {{ 'selected' if not giorni }}>Vista mensile</option>
+    {% for g in (30, 60, 90, 180) %}<option value="{{ g }}" {{ 'selected' if giorni == g }}>Prossimi {{ g }} giorni</option>{% endfor %}
+  </select>
+  <select name="conto" onchange="this.form.submit()">
+    <option value="0">Tutti i conti</option>
+    {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if conto == a.id }}>{{ a.name }}</option>{% endfor %}
+  </select>
+</form>
+
+<div class="kpis">
+  <div class="kpi"><div class="label">Saldo oggi</div><div class="value">{{ fc.balance_today|eur }}</div></div>
+  <div class="kpi"><div class="label">Saldo a fine periodo</div><div class="value">{{ fc.end_balance|eur }}</div></div>
+  <div class="kpi"><div class="label">Minimo previsto</div>
+    <div class="value {{ 'crit' if fc.min_balance is not none and fc.min_balance < fc.threshold }}">{{ fc.min_balance|eur if fc.min_balance is not none else '—' }}</div>
+    <div class="sub">{% if fc.min_date %}il {{ fc.min_date|d }}{% endif %}</div></div>
+  <div class="kpi"><div class="label">Entrate / uscite previste</div>
+    <div class="value" style="font-size:18px"><span class="pos">{{ fc.planned_in|eur_sign }}</span> / {{ fc.planned_out|eur }}</div></div>
+</div>
+
+{% if fc.overdue %}
+<div class="alert warn">
+  <strong>{{ fc.overdue|length }} voci scadute e non ancora abbinate a un movimento</strong> ({{ fc.overdue_total|eur_sign }}).
+  {% if fc.overdue_included %}Sono conteggiate nel saldo previsto di oggi.{% else %}Non sono conteggiate (vedi Impostazioni).{% endif %}
+  <details style="margin-top:6px"><summary>Mostra</summary>
+    <table><tbody>
+    {% for p in fc.overdue %}
+      <tr><td>{{ p.due_date|d }}</td><td><a href="/previsti/{{ p.id }}">{{ p.title }}</a></td><td>{{ amount(p.amount_cents) }}</td></tr>
+    {% endfor %}
+    </tbody></table>
+    <p class="small" style="margin-top:6px">Se sono già state pagate, <a href="/riconciliazione">abbinale ai movimenti</a> o segnale come pagate.</p>
+  </details>
+</div>
+{% endif %}
+
+<div class="card">{{ forecast_chart(chart, "fc-chart") }}</div>
+
+<div class="card">
+  <h2>Giorno per giorno</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Giorno</th><th>Voci</th><th class="num">Entrate</th><th class="num">Uscite</th><th class="num">Saldo</th></tr></thead>
+    <tbody>
+    {% for d in fc.days %}
+      <tr class="{{ 'past' if d.date < fc.today }} {{ 'today' if d.date == fc.today }} {{ 'below' if d.below_threshold }}">
+        <td style="white-space:nowrap">{{ d.date|wd }} {{ d.date|d }}{% if d.date == fc.today %} <span class="badge info">oggi</span>{% endif %}</td>
+        <td>
+          {% for p in d.items %}
+            <div><a href="/previsti/{{ p.id }}">{{ p.title }}</a> <span class="small muted">{{ p.amount_cents|eur_sign }}{% if p.account %} · {{ p.account.name }}{% endif %}</span></div>
+          {% endfor %}
+          {% if d.date < fc.today and (d.inflow or d.outflow) %}<span class="small muted">movimenti reali</span>{% endif %}
+        </td>
+        <td class="num pos">{{ d.inflow|eur if d.inflow else '' }}</td>
+        <td class="num">{{ d.outflow|eur if d.outflow else '' }}</td>
+        <td class="num bal">
+          {% if d.projected is not none %}{{ d.projected|eur }}{% if d.below_threshold %} <span class="badge crit">sotto soglia</span>{% endif %}
+          {% else %}{{ d.actual|eur }}{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

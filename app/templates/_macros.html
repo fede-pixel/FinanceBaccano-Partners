@@ -1,0 +1,38 @@
+{% macro amount(c) -%}
+<span class="num {{ 'pos' if c > 0 else ('neg' if c < 0 else 'muted') }}">{{ c|eur_sign }}</span>
+{%- endmacro %}
+
+{% macro status_badge(s) -%}
+{% if s == 'pagato' %}<span class="badge good">Pagato</span>
+{% elif s == 'annullato' %}<span class="badge">Annullato</span>
+{% else %}<span class="badge info">Previsto</span>{% endif %}
+{%- endmacro %}
+
+{% macro doc_badge(item, today) -%}
+{% if item.status == 'inviato' %}<span class="badge good">Inviato</span>
+{% elif item.status == 'completato' %}<span class="badge info">Pronto da inviare</span>
+{% elif item.status == 'non_applicabile' %}<span class="badge">Nessuna operazione</span>
+{% elif item.due_date < today %}<span class="badge crit">Scaduto il {{ item.due_date|d }}</span>
+{% elif (item.due_date - today).days <= 5 %}<span class="badge warn">Entro il {{ item.due_date|d }}</span>
+{% else %}<span class="badge plain">Entro il {{ item.due_date|d }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro forecast_chart(chart, id, bars=true) -%}
+<script type="application/json" id="{{ id }}">{{ chart|safe }}</script>
+<div data-forecast="{{ id }}">
+  <div class="legend">
+    <span><i style="border-color: var(--series-actual)"></i>Saldo reale</span>
+    <span><i class="dashed" style="border-color: var(--series-forecast)"></i>Saldo previsto</span>
+    <span><i class="dashed" style="border-color: var(--critical)"></i>Soglia minima</span>
+  </div>
+  <div class="chart-box"><canvas class="line" aria-label="Andamento del saldo reale e previsto" role="img"></canvas></div>
+  {% if bars %}
+  <h3 style="margin-top:18px">Entrate e uscite giorno per giorno</h3>
+  <div class="legend">
+    <span><span class="dot" style="background: var(--series-actual)"></span>Entrate</span>
+    <span><span class="dot" style="background: var(--series-forecast)"></span>Uscite</span>
+  </div>
+  <div class="chart-box" style="height:180px"><canvas class="bars" aria-label="Entrate e uscite giornaliere" role="img"></canvas></div>
+  {% endif %}
+</div>
+{%- endmacro %}

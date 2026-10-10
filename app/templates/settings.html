@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Impostazioni{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Impostazioni</h1></div>
+<form method="post" action="/impostazioni">
+<div class="grid grid-2" style="align-items:start">
+  <div class="card">
+    <h2>Azienda e commercialista</h2>
+    <div class="field"><label>Ragione sociale</label><input name="company_name" value="{{ v.company_name }}" style="width:100%"></div>
+    <div class="field"><label>Partita IVA aziendale (per riconoscere fatture attive/passive)</label><input name="company_vat" value="{{ v.company_vat }}" placeholder="IT01234567890"></div>
+    <div class="field"><label>Email del commercialista</label><input type="email" name="accountant_email" value="{{ v.accountant_email }}" style="width:100%"></div>
+  </div>
+  <div class="card">
+    <h2>Forecast</h2>
+    <div class="field"><label>Soglia minima di liquidità (€) – sotto questa il forecast avvisa</label><input name="low_balance_threshold" value="{{ (v.low_balance_threshold|int)|cents_input }}"></div>
+    <div class="field"><label>Giorni di pagamento se la fattura non ha scadenza</label><input type="number" name="default_payment_days" value="{{ v.default_payment_days }}"></div>
+    <div class="field"><label>Tolleranza giorni per gli abbinamenti</label><input type="number" name="match_tolerance_days" value="{{ v.match_tolerance_days }}"></div>
+    <div class="field"><label class="check"><input type="checkbox" name="include_overdue_in_forecast" value="1" {{ 'checked' if v.include_overdue_in_forecast == '1' }}> Conta nel saldo previsto di oggi le voci scadute non ancora abbinate</label></div>
+  </div>
+  <div class="card">
+    <h2>Cartelle</h2>
+    <div class="field"><label>Cartella documenti (vuoto = predefinita)</label><input name="docs_dir" value="{{ v.docs_dir }}" placeholder="{{ docs_dir }}" style="width:100%"></div>
+    <div class="field"><label>Cartella pacchetti ZIP (es. una cartella di Google Drive sincronizzata)</label><input name="packages_dir" value="{{ v.packages_dir }}" placeholder="{{ packages_dir }}" style="width:100%"></div>
+    <p class="small muted">Database e backup: <code>{{ data_dir }}</code> · backup giornalieri in <code>{{ backup_dir }}</code> (ultimi 30).</p>
+  </div>
+  <div class="card">
+    <h2>Scadenzario documenti</h2>
+    <div class="field"><label>Mese da cui parte lo scadenzario</label><input type="month" name="admin_start_period" value="{{ v.admin_start_period }}"></div>
+    <div class="field"><label>Avvisa in dashboard quanti giorni prima della scadenza</label><input type="number" name="reminder_days" value="{{ v.reminder_days }}"></div>
+    <table class="small">
+      <thead><tr><th>Attivo</th><th>Documento</th><th>Frequenza</th><th>Giorno scadenza</th></tr></thead>
+      <tbody>
+      {% for c in cats %}
+        <tr><td><input type="checkbox" name="cat_{{ c.id }}_active" value="1" {{ 'checked' if c.active }}></td><td>{{ c.name }}</td><td>{{ c.frequency }}</td>
+          <td><input type="number" min="1" max="31" name="cat_{{ c.id }}_due_day" value="{{ c.due_day }}" style="width:70px"> del mese succ.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<button>Salva impostazioni</button>
+</form>
+<form method="post" action="/impostazioni/backup" style="margin-top:16px"><button class="ghost">Esegui un backup adesso</button></form>
+{% endblock %}

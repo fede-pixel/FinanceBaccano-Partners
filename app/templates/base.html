@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Finance & Admin{% endblock %} · Baccano Partners</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script src="/static/js/chart.umd.js" defer></script>
+  <script src="/static/js/app.js" defer></script>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">Baccano Partners<span>Finance &amp; Administration</span></div>
+    <nav class="nav">
+      {% for group, links in NAV %}
+      <div class="nav-group">
+        {% if group %}<div class="nav-title">{{ group }}</div>{% endif %}
+        {% for href, label in links %}
+          {% set path = request.url.path %}
+          <a href="{{ href }}" class="{{ 'active' if (href == '/' and path == '/') or (href != '/' and path.startswith(href)) else '' }}">{{ label }}</a>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </nav>
+  </aside>
+  <main class="main">
+    {% if msg %}<div class="alert ok">{{ msg }}</div>{% endif %}
+    {% if err %}<div class="alert err">{{ err }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

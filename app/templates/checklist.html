@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_macros.html" import doc_badge %}
+{% block title %}Scadenzario documenti{% endblock %}
+{% macro period_block(key, items) -%}
+{% set done = items|selectattr('status', 'in', ['completato', 'inviato', 'non_applicabile'])|list|length %}
+<div class="card period">
+  <div class="period-head">
+    <h2 style="margin:0">{{ period_label(key) }}</h2>
+    <div class="toolbar" style="margin:0">
+      <span class="small muted">{{ done }}/{{ items|length }} pronti</span>
+      <div class="progress"><span style="width: {{ (done / items|length * 100)|round }}%"></span></div>
+      {% if '-Q' not in key %}<a class="btn btn-small btn-ghost" href="/pacchetto?mese={{ key }}">Pacchetto</a>{% endif %}
+    </div>
+  </div>
+  {% for it in items %}
+  <div class="doc-row">
+    <div><a href="/documenti/voce/{{ it.id }}"><strong>{{ it.category.name }}</strong></a>
+      {% if it.category.auto_export %}<span class="badge plain" title="Il file si può generare dai movimenti importati">auto</span>{% endif %}
+      {% if it.notes %}<div class="small muted">{{ it.notes }}</div>{% endif %}</div>
+    <div class="small muted">{{ it.documents|length }} file</div>
+    <div>{{ doc_badge(it, today) }}</div>
+    <div><a class="btn btn-small btn-ghost" href="/documenti/voce/{{ it.id }}">Apri</a></div>
+  </div>
+  {% endfor %}
+</div>
+{%- endmacro %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Scadenzario documenti</h1>
+  <div class="muted">Documenti da consegnare al commercialista: mensili entro il 6 del mese successivo, estratti conto trimestrali dal 15 del mese dopo la chiusura del trimestre.</div></div>
+  <form method="get"><select name="anno" onchange="this.form.submit()">{% for y in years %}<option {{ 'selected' if y == anno }}>{{ y }}</option>{% endfor %}</select></form>
+</div>
+
+{% set late = deadlines|selectattr('overdue')|list %}
+{% if late %}
+<div class="alert err"><strong>{{ late|length }} documenti in ritardo:</strong>
+  {% for dl in late[:8] %}<a href="/documenti/voce/{{ dl.item.id }}">{{ dl.item.category.name }} ({{ period_label(dl.item.period_key) }})</a>{{ ", " if not loop.last }}{% endfor %}
+</div>
+{% endif %}
+
+<div class="grid grid-2" style="align-items:start">
+  <div>
+    <h2>Mensili</h2>
+    {% for key, items in monthly.items() %}{{ period_block(key, items) }}{% else %}<div class="empty">Nessun periodo.</div>{% endfor %}
+  </div>
+  <div>
+    <h2>Trimestrali</h2>
+    {% for key, items in quarterly.items() %}{{ period_block(key, items) }}{% else %}<div class="empty">Nessun periodo.</div>{% endfor %}
+    <div class="alert info small">Il mese da cui parte lo scadenzario e i giorni di scadenza si cambiano nelle <a href="/impostazioni">Impostazioni</a>.</div>
+  </div>
+</div>
+{% endblock %}
