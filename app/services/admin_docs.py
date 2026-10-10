@@ -331,7 +331,7 @@ def build_package(session: Session, key: str) -> Path:
 def mark_sent(session: Session, items: list[ChecklistItem]) -> None:
     now = datetime.now()
     for it in items:
-        if it.status in ("completato", "non_applicabile", "da_fare") and (it.documents or it.status == "non_applicabile"):
+        if it.status != "inviato" and (it.documents or it.status in ("completato", "non_applicabile")):
             it.status = "inviato"
             it.sent_at = now
     session.commit()

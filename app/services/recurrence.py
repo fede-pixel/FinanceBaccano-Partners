@@ -47,13 +47,22 @@ def sync_recurrence(session: Session, rec: Recurrence, today: date | None = None
     Le occorrenze già pagate o modificate a mano (source 'modificata') restano; quelle future
     ancora 'previste' vengono rigenerate dalla regola (così una modifica di importo/giorno si propaga)."""
     today = today or date.today()
-    existing = {p.occurrence_key: p for p in session.scalars(select(PlannedItem).where(PlannedItem.recurrence_id == rec.id))}
+
+    def period(d: date):
+        # per le frequenze mensili un'occorrenza è "il mese": cambiare il giorno non deve duplicarla
+        return d if rec.frequency == "settimanale" else (d.year, d.month)
+
+    existing = {
+        period(p.occurrence_key): p
+        for p in session.scalars(select(PlannedItem).where(PlannedItem.recurrence_id == rec.id))
+        if p.occurrence_key
+    }
     wanted = set()
     if rec.active:
         for nominal in occurrences(rec, today + timedelta(days=HORIZON_DAYS)):
-            wanted.add(nominal)
+            wanted.add(period(nominal))
             due = adjust_business_day(nominal, rec.business_day_rule)
-            item = existing.get(nominal)
+            item = existing.get(period(nominal))
             if item is None and due < today:
                 continue  # non creo occorrenze passate: risulterebbero "scadute" anche se già pagate
             if item is None:
@@ -71,7 +80,7 @@ def sync_recurrence(session: Session, rec: Recurrence, today: date | None = None
                 )
             elif item.source == "ricorrente" and item.status == "previsto" and item.due_date >= today:
                 item.title, item.amount_cents, item.due_date = rec.title, rec.amount_cents, due
-                item.account_id, item.category = rec.account_id, rec.category
+                item.account_id, item.category, item.occurrence_key = rec.account_id, rec.category, nominal
     # Elimina occorrenze future non più previste dalla regola (mai quelle pagate).
     stale = [
         p.id for k, p in existing.items()

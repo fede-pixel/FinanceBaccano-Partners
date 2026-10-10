@@ -14,7 +14,7 @@ from app import config
 from app.db import get_session
 from app.models import ChecklistItem, DocCategory, Document
 from app.services import admin_docs as ad
-from app.services.util import add_months, get_setting, parse_amount, parse_date
+from app.services.util import add_months, get_setting, parse_amount, parse_date, parse_month
 from app.web import redirect, render
 
 router = APIRouter()
@@ -126,7 +126,10 @@ def document_delete(doc_id: int, session: Session = Depends(get_session)):
 def package(request: Request, mese: str = "", session: Session = Depends(get_session)):
     today = date.today()
     ad.ensure_checklist(session, today)
-    if not mese:
+    ym = parse_month(mese)
+    if ym:
+        mese = f"{ym[0]}-{ym[1]:02d}"
+    else:
         prev = add_months(today.replace(day=1), -1)
         mese = f"{prev.year}-{prev.month:02d}"
     items = ad.package_items(session, mese)
@@ -154,12 +157,16 @@ def package(request: Request, mese: str = "", session: Session = Depends(get_ses
 
 @router.post("/pacchetto/crea")
 def package_build(mese: str = Form(...), session: Session = Depends(get_session)):
+    if not parse_month(mese):
+        return redirect("/pacchetto", err="Mese non valido")
     path = ad.build_package(session, mese)
     return redirect(f"/pacchetto?mese={mese}", msg=f"Pacchetto creato: {path}")
 
 
 @router.get("/pacchetto/scarica")
 def package_download(mese: str, session: Session = Depends(get_session)):
+    if not parse_month(mese):
+        raise HTTPException(404, "Mese non valido")
     path = ad.packages_root(session) / f"{ad._safe(get_setting(session, 'company_name') or 'Documenti')} - Documenti {mese}.zip"
     if not path.exists():
         raise HTTPException(404, "Crea prima il pacchetto")
@@ -168,6 +175,8 @@ def package_download(mese: str, session: Session = Depends(get_session)):
 
 @router.post("/pacchetto/inviato")
 def package_sent(mese: str = Form(...), session: Session = Depends(get_session)):
+    if not parse_month(mese):
+        return redirect("/pacchetto", err="Mese non valido")
     ad.mark_sent(session, ad.package_items(session, mese))
     return redirect(f"/pacchetto?mese={mese}", msg="Documenti segnati come inviati")
 

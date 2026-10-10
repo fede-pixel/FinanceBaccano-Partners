@@ -20,6 +20,8 @@ def parse_amount(value: str | float | int | None, decimal_sep: str | None = None
     Con `decimal_sep` ("," o ".") il separatore decimale è esplicito e non viene indovinato."""
     if value is None:
         return None
+    if getattr(value, "is_number", False):  # cella numerica di Excel: già un numero esatto
+        value = float(value)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return int((Decimal(str(value)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     s = str(value).strip()
@@ -75,6 +77,15 @@ def fmt_date(d: date | datetime | None) -> str:
 
 def month_label(year: int, month: int) -> str:
     return f"{MONTHS_IT[month].capitalize()} {year}"
+
+
+def parse_month(value: str | None) -> tuple[int, int] | None:
+    """'2026-09' -> (2026, 9); None se il valore non è un mese valido."""
+    m = re.fullmatch(r"(\d{4})-(\d{1,2})", (value or "").strip())
+    if not m:
+        return None
+    y, mth = int(m.group(1)), int(m.group(2))
+    return (y, mth) if 2000 <= y <= 2100 and 1 <= mth <= 12 else None
 
 
 def month_bounds(year: int, month: int) -> tuple[date, date]:

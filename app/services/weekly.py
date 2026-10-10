@@ -117,15 +117,18 @@ def match_account(rows: list[list[str]], filename: str, accounts: list[Account])
         hits = [a for a in cands if _norm(a.name) and _norm(a.name) in fname]
         return hits or [a for a in cands if _norm(a.bank) and _norm(a.bank) in fname]
 
+    # L'IBAN nel file o il nome del file identificano il conto meglio del solo formato delle colonne
+    strong = by_iban if len(by_iban) == 1 else by_name(accounts)
+    if len(strong) == 1:
+        return strong[0], strong[0] not in by_profile
+    if len(by_profile) == 1:
+        return by_profile[0], False
     if by_profile:
-        if len(by_profile) == 1:
-            return by_profile[0], False
         narrowed = [a for a in by_profile if a in by_iban] or by_name(by_profile)
         if len(narrowed) == 1:
             return narrowed[0], False
         return None, False  # più conti con lo stesso formato: lo sceglie l'utente
-    guess = by_iban or by_name(accounts)
-    return (guess[0] if len(guess) == 1 else None), True
+    return None, True
 
 
 def guess_category(filename: str) -> str:

@@ -9,7 +9,7 @@ from app.db import get_session
 from app.models import Account, BankConnection, PlannedItem
 from app.services.admin_docs import ensure_checklist, open_deadlines, period_label
 from app.services.forecast import Forecast, account_statuses, build_forecast
-from app.services.util import add_months, get_setting, month_bounds, month_label
+from app.services.util import add_months, get_setting, month_bounds, month_label, parse_month
 from app.web import render
 
 router = APIRouter()
@@ -94,11 +94,8 @@ def forecast(
         title = f"Prossimi {giorni} giorni"
         cur = today.replace(day=1)
     else:
-        try:
-            y, m = (int(x) for x in mese.split("-"))
-            cur = date(y, m, 1)
-        except ValueError:
-            cur = today.replace(day=1)
+        ym = parse_month(mese)
+        cur = date(ym[0], ym[1], 1) if ym else today.replace(day=1)
         start, end = month_bounds(cur.year, cur.month)
         title = month_label(cur.year, cur.month)
     fc = build_forecast(session, start, end, today, [conto] if conto else None)

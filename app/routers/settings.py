@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 from app import config
 from app.backup import run_backup
 from app.db import get_session
-from app.models import DocCategory
-from app.services.admin_docs import docs_root, packages_root
+from app.models import ChecklistItem, DocCategory
+from app.services.admin_docs import docs_root, due_date_for, packages_root
 from app.services.util import SETTING_DEFAULTS, get_setting, parse_amount, set_setting
 from app.web import redirect, render
 
@@ -39,8 +39,10 @@ async def settings_save(request: Request, session: Session = Depends(get_session
     set_setting(session, "include_overdue_in_forecast", "1" if form.get("include_overdue_in_forecast") else "0")
     for cat in session.scalars(select(DocCategory)):
         day = str(form.get(f"cat_{cat.id}_due_day", "")).strip()
-        if day.isdigit() and 1 <= int(day) <= 31:
+        if day.isdigit() and 1 <= int(day) <= 31 and int(day) != cat.due_day:
             cat.due_day = int(day)
+            for item in session.scalars(select(ChecklistItem).where(ChecklistItem.category_id == cat.id, ChecklistItem.status != "inviato")):
+                item.due_date = due_date_for(cat, item.period_end)
         cat.active = bool(form.get(f"cat_{cat.id}_active"))
     session.commit()
     return redirect("/impostazioni", msg="Impostazioni salvate")

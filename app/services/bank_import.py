@@ -65,6 +65,12 @@ class ParsedTx:
 
 # ---------- lettura file ----------
 
+class ExcelNumber(str):
+    """Numero letto da una cella Excel: il valore è esatto, il separatore decimale non va indovinato."""
+
+    is_number = True
+
+
 def _cell_to_str(v) -> str:
     if v is None:
         return ""
@@ -72,9 +78,30 @@ def _cell_to_str(v) -> str:
         return v.strftime("%Y-%m-%d %H:%M:%S") if (v.hour or v.minute or v.second) else v.strftime("%Y-%m-%d")
     if isinstance(v, date):
         return v.strftime("%Y-%m-%d")
-    if isinstance(v, float):
-        return repr(round(v, 2)) if v != int(v) else str(int(v))
+    if isinstance(v, bool):
+        return str(v)
+    if isinstance(v, (int, float)):
+        return ExcelNumber(repr(v) if isinstance(v, float) and v != int(v) else str(int(v)))
     return str(v).strip()
+
+
+def detect_delimiter(text: str) -> str:
+    """Sceglie il separatore che produce lo stesso numero di colonne sul maggior numero di righe.
+    Contare i caratteri non basta: nei CSV italiani le virgole decimali superano spesso i ';'."""
+    from collections import Counter
+
+    lines = [ln for ln in text.splitlines()[:60] if ln.strip()]
+    best, best_score = ";", (-1, -1)
+    for d in (";", ",", "\t", "|"):
+        widths = [len(r) for r in csv.reader(lines, delimiter=d)]
+        common = Counter(w for w in widths if w > 1).most_common(1)
+        if not common:
+            continue
+        width, rows = common[0]
+        score = (rows, width)
+        if score > best_score:
+            best, best_score = d, score
+    return best
 
 
 def read_table(content: bytes, filename: str) -> list[list[str]]:
@@ -107,9 +134,7 @@ def read_table(content: bytes, filename: str) -> list[list[str]]:
             break
         except UnicodeDecodeError:
             continue
-    sample = "\n".join(text.splitlines()[:30])
-    counts = {d: sample.count(d) for d in (";", ",", "\t", "|")}
-    delimiter = max(counts, key=counts.get)
+    delimiter = detect_delimiter(text)
     return [[c.strip() for c in row] for row in csv.reader(io.StringIO(text), delimiter=delimiter)]
 
 
@@ -165,7 +190,7 @@ def guess_profile(rows: list[list[str]]) -> ImportProfile:
     used = {p.date_col}
     p.in_col = _find(header, _KEYWORDS["in_col"], used)
     p.out_col = _find(header, _KEYWORDS["out_col"], used | {p.in_col})
-    p.amount_col = _find(header, _KEYWORDS["amount_col"], used)
+    p.amount_col = _find(header, _KEYWORDS["amount_col"], used | {p.in_col, p.out_col})
     if p.in_col and p.out_col and not p.amount_col:
         p.amount_mode = "split"
     used |= {p.amount_col, p.in_col, p.out_col}
