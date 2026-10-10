@@ -93,3 +93,33 @@ def test_pdf_upload_from_ui(client):
     assert "non supportato" in r.text
     r = client.post("/movimenti/import", data={"account_id": "1"}, files={"file": ("x.csv", b"\x00\x00binario")})
     assert "Non riesco a leggere il file" in r.text
+
+
+def test_textual_dates_and_typographic_minus():
+    from datetime import date
+
+    from app.services.bank_import import parse_date_value
+    from app.services.util import parse_amount
+
+    assert parse_date_value("1 ott 2026") == date(2026, 10, 1)
+    assert parse_date_value("01 Oct 2026") == date(2026, 10, 1)
+    assert parse_date_value("1. Okt. 2026") == date(2026, 10, 1)
+    assert parse_date_value("Oct 1, 2026") == date(2026, 10, 1)
+    assert parse_date_value("15 dicembre 2026") == date(2026, 12, 15)
+    assert parse_date_value("01.10.26") == date(2026, 10, 1)
+    assert parse_date_value("01/10/2026 14:32 CET") == date(2026, 10, 1)
+    assert parse_date_value("Saldo iniziale") is None
+    assert parse_amount("−12,50 €") == -1250
+    assert parse_amount("– 1.000,00") == -100000
+
+
+def test_unruled_pdf_with_textual_dates():
+    header = ["Data transazione", "Tipo", "Descrizione", "Importo", "Saldo"]
+    xs = [40, 130, 200, 400, 480]
+    rows_ = [["1 ott 2026", "Carta", "Amazon EU", "−45,20 €", "954,80 €"],
+             ["3 ott 2026", "Bonifico", "Cliente Rossi", "1.000,00 €", "1.954,80 €"]]
+    rows = read_table(bank_pdf([rows_], header, xs), "vivid.pdf")
+    p = guess_profile(rows)
+    assert p.date_col == "Data transazione" and p.amount_col == "Importo"
+    txs, errors = parse_rows(rows, p)
+    assert [(t.date.day, t.amount_cents) for t in txs] == [(1, -4520), (3, 100000)] and not errors

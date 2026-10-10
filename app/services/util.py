@@ -30,7 +30,8 @@ def parse_amount(value: str | float | int | None, decimal_sep: str | None = None
     negative = False
     if s.startswith("(") and s.endswith(")"):
         negative, s = True, s[1:-1]
-    s = re.sub(r"[€$£\s ]|EUR|USD", "", s, flags=re.IGNORECASE)
+    s = s.replace("\u2212", "-").replace("\u2013", "-").replace("\u2012", "-")  # meno tipografici dei PDF
+    s = re.sub(r"[€$£\s\u00a0\u202f]|EUR|USD", "", s, flags=re.IGNORECASE)
     if s.endswith("-"):
         negative, s = not negative, s[:-1]
     if s.startswith("+"):

@@ -20,7 +20,47 @@ DATE_FORMATS = [
     "%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d.%m.%Y", "%Y-%m-%d", "%Y/%m/%d",
     "%d/%m/%Y %H:%M", "%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
     "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ",
+    "%d.%m.%y", "%d-%m-%y", "%d.%m.%Y %H:%M", "%d.%m.%Y %H:%M:%S",
 ]
+
+# Mesi scritti a lettere (italiano, inglese, tedesco: Vivid è una banca tedesca)
+_MONTH_NAMES = {
+    "gen": 1, "gennaio": 1, "jan": 1, "january": 1, "januar": 1, "jän": 1,
+    "feb": 2, "febbraio": 2, "february": 2, "februar": 2,
+    "mar": 3, "marzo": 3, "march": 3, "mär": 3, "mrz": 3, "märz": 3,
+    "apr": 4, "aprile": 4, "april": 4,
+    "mag": 5, "maggio": 5, "may": 5, "mai": 5,
+    "giu": 6, "giugno": 6, "jun": 6, "june": 6, "juni": 6,
+    "lug": 7, "luglio": 7, "jul": 7, "july": 7, "juli": 7,
+    "ago": 8, "agosto": 8, "aug": 8, "august": 8,
+    "set": 9, "settembre": 9, "sep": 9, "sept": 9, "september": 9,
+    "ott": 10, "ottobre": 10, "oct": 10, "october": 10, "okt": 10, "oktober": 10,
+    "nov": 11, "novembre": 11, "november": 11,
+    "dic": 12, "dicembre": 12, "dec": 12, "december": 12, "dez": 12, "dezember": 12,
+}
+_TEXT_DATE = re.compile(r"^(\d{1,2})[\s.\-/]+([a-zà-ü]{3,10})\.?[\s.\-/,]+(\d{2,4})\b", re.I)
+_TEXT_DATE_US = re.compile(r"^([a-zà-ü]{3,10})\.?\s+(\d{1,2}),?\s+(\d{4})\b", re.I)
+_LEADING_DATE = re.compile(r"^(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}|\d{4}-\d{2}-\d{2})")
+
+
+def _text_date(value: str) -> date | None:
+    """'1 ott 2026', '01 Oct 2026', '1. Okt. 2026', 'Oct 1, 2026' -> date."""
+    m = _TEXT_DATE.match(value)
+    if m:
+        day, mon, year = m.group(1), m.group(2), m.group(3)
+    else:
+        m = _TEXT_DATE_US.match(value)
+        if not m:
+            return None
+        mon, day, year = m.group(1), m.group(2), m.group(3)
+    month = _MONTH_NAMES.get(mon.lower())
+    if not month:
+        return None
+    y = int(year) + (2000 if len(year) == 2 else 0)
+    try:
+        return date(y, month, int(day))
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -111,8 +151,11 @@ class UnreadableFile(ValueError):
 TABLE_EXTENSIONS = (".csv", ".txt", ".xlsx", ".xlsm", ".xls", ".pdf")
 
 
-_HEADER_HINT = re.compile(r"\b(data|date)\b", re.I)
-_DATE_START = re.compile(r"^\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}|^\d{4}-\d{2}-\d{2}")
+_HEADER_HINT = re.compile(r"\b(data|date|datum|buchungstag|valuta)\b", re.I)
+
+
+def _starts_with_date(text: str) -> bool:
+    return bool(text) and parse_date_value(text) is not None
 
 
 def _pdf_lines(page) -> list[list[dict]]:
@@ -166,7 +209,7 @@ def _pdf_by_position(pdf) -> list[list[str]]:
         last_top = None
         for line in _pdf_lines(page):
             text = " ".join(w["text"] for w in line)
-            if len(line) >= 3 and _HEADER_HINT.search(text) and not _DATE_START.match(line[0]["text"]):
+            if len(line) >= 3 and _HEADER_HINT.search(text) and not _starts_with_date(text):
                 new_cols = _header_columns(line)
                 if len(new_cols) >= 3:
                     if cols is None:
@@ -177,7 +220,7 @@ def _pdf_by_position(pdf) -> list[list[str]]:
                 continue
             cells = _assign(line, cols)
             top = line[0]["top"]
-            if _DATE_START.match(cells[0]) or len(out) == 1:
+            if _starts_with_date(cells[0]) or (len(cells) > 1 and _starts_with_date(cells[1])) or len(out) == 1:
                 out.append(cells)
                 last_top = top
             elif last_top is not None and 0 < top - last_top <= 24:
@@ -350,9 +393,18 @@ def parse_date_value(value: str, fmt: str = "auto") -> date | None:
             return datetime.strptime(value, f).date()
         except ValueError:
             continue
+    if fmt != "auto":
+        return None
     # Excel a volte esporta il numero seriale
-    if fmt == "auto" and re.fullmatch(r"\d{5}(\.\d+)?", value):
+    if re.fullmatch(r"\d{5}(\.\d+)?", value):
         return date(1899, 12, 30) + timedelta(days=int(float(value)))
+    # mese a lettere, o data seguita da altro testo (es. "01/10/2026 14:32 CET", "01.10.2026 Valuta")
+    d = _text_date(value)
+    if d:
+        return d
+    m = _LEADING_DATE.match(value)
+    if m and m.group(1) != value:
+        return parse_date_value(m.group(1))
     return None
 
 

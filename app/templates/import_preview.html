@@ -72,8 +72,8 @@
 </div>
 </form>
 
-<details class="card">
-  <summary>File originale (prime righe)</summary>
+<details class="card" {{ 'open' if not parsed_count }}>
+  <summary>File originale (prime righe){% if not parsed_count %} – controlla qui come sono scritte date e importi{% endif %}</summary>
   <div class="table-wrap"><table class="small">
     {% for r in rows %}<tr><td class="muted">{{ loop.index0 }}</td>{% for c in r %}<td>{{ c }}</td>{% endfor %}</tr>{% endfor %}
   </table></div>
