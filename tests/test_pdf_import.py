@@ -230,3 +230,16 @@ def test_sign_inferred_from_balance():
             ["19/09/2026", "Apertura", "100,00", "-840,67"]]
     txs, _ = parse_rows(rows, guess_profile(rows))
     assert [t.amount_cents for t in txs] == [-9000, -1000, 100000, 10000]
+
+
+def test_scalare_document_is_recognized(client):
+    from app.services.bank_import import looks_like_scalare
+
+    rows = [["COORDINATE BANCARIE"], ["- Valuta - Saldo per valuta - gg - Numeri S.B.F.- Numeri di Conto - Numeri Sconf.- Numeri Creditori"],
+            ["17/04/26 15.983,80 A 10 159.838,00"]]
+    assert looks_like_scalare(rows)
+    assert not looks_like_scalare([["Data", "Descrizione", "Importo"], ["01/10/2026", "Valuta estera USD", "-10"]])
+    client.post("/conti/salva", data={"name": "BCC", "opening_balance": "0"})
+    csv = "Valuta;Saldo per valuta;gg;Numeri Creditori\n17/04/26;15.983,80 A;10;159.838,00\n".encode()
+    r = client.post("/movimenti/import", data={"account_id": "1"}, files={"file": ("scalare.csv", csv)})
+    assert "riassunto scalare" in r.text

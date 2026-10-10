@@ -16,6 +16,7 @@ from app.services.bank_import import (
     UnreadableFile,
     guess_profile,
     import_transactions,
+    looks_like_scalare,
     new_batch_id,
     parse_rows,
     read_table,
@@ -338,7 +339,7 @@ async def import_preview(token: str, request: Request, conto: int = 0, session: 
     return render(
         request, "import_preview.html", token=token, account=account, rows=rows[:40], header=[h for h in header if h],
         profile=profile, parsed=parsed[:30], parsed_count=len(parsed), errors=errors[:20], error_count=len(errors),
-        is_pdf=token.lower().endswith(".pdf"), ai_enabled=_ai_enabled(),
+        is_pdf=token.lower().endswith(".pdf"), ai_enabled=_ai_enabled(), scalare=looks_like_scalare(rows),
         total=sum(t.amount_cents for t in parsed),
     )
 

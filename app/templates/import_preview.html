@@ -14,7 +14,13 @@
   <a href="/movimenti/import?conto={{ account.id }}">← Scegli un altro file</a>
 </div>
 
-{% if is_pdf %}
+{% if scalare %}
+<div class="alert err">
+  <strong>Questo documento è il riassunto scalare</strong> (Valuta · Saldo per valuta · giorni · Numeri creditori/debitori): serve al calcolo degli interessi e riporta i saldi per data valuta, <strong>non i singoli movimenti</strong>, quindi non si può importare come lista movimenti.
+  <div class="small" style="margin-top:6px">Per i movimenti scarica dall'home banking la <em>lista movimenti</em> (meglio in Excel o CSV) oppure l'estratto conto con l'elenco delle operazioni. Il riassunto scalare caricalo invece nello <a href="/documenti">Scadenzario</a> tra gli "Estratti conto ufficiali trimestrali" per il commercialista.</div>
+</div>
+{% endif %}
+{% if is_pdf and not scalare %}
 <div class="alert {{ 'warn' if not parsed_count or error_count else 'info' }}">
   {% if ai_enabled %}
     <form method="post" action="/movimenti/import/{{ token }}/ai?conto={{ account.id }}" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"

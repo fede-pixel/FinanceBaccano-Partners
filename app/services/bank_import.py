@@ -372,6 +372,15 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower())
 
 
+_SCALARE = re.compile(r"saldo per valuta|numeri creditori|numeri debitori|riassunto scalare|scalare", re.I)
+
+
+def looks_like_scalare(rows: list[list[str]]) -> bool:
+    """Riassunto scalare (calcolo interessi): elenca saldi per data valuta, non movimenti."""
+    text = " ".join(c for r in rows[:60] for c in r)
+    return bool(_SCALARE.search(text))
+
+
 def detect_header_row(rows: list[list[str]]) -> int:
     width = max((sum(1 for c in r if c) for r in rows[:40]), default=0)
     for i, row in enumerate(rows[:40]):
