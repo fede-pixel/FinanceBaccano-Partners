@@ -38,9 +38,11 @@ def checklist(request: Request, anno: int = 0, session: Session = Depends(get_se
     monthly = {k: v for k, v in periods.items() if "-Q" not in k}
     quarterly = {k: v for k, v in periods.items() if "-Q" in k}
     deadlines = ad.open_deadlines(session, today, within_days=10_000)
+    from app.services.refresh import stale_sent
+
     return render(
         request, "checklist.html", monthly=monthly, quarterly=quarterly, period_label=ad.period_label,
-        status_labels=ad.STATUS_LABELS, years=years, anno=anno, deadlines=deadlines,
+        status_labels=ad.STATUS_LABELS, years=years, anno=anno, deadlines=deadlines, stale_sent=stale_sent(session),
     )
 
 
@@ -82,6 +84,10 @@ async def checklist_upload(
 def checklist_generate(item_id: int, session: Session = Depends(get_session)):
     item = session.get(ChecklistItem, item_id) or _404()
     docs = ad.generate_auto_exports(session, item)
+    from app.services.refresh import remember_export
+
+    remember_export(session, item)
+    session.commit()
     if not docs:
         return redirect(f"/documenti/voce/{item_id}", err="Nessun conto di questo tipo: aggiungilo in 'Conti e carte'")
     return redirect(f"/documenti/voce/{item_id}", msg=f"Generati {len(docs)} file Excel dai movimenti")

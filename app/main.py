@@ -53,6 +53,10 @@ def _sync_banks_job() -> None:
         res = sync_banks(session)
         if res.accounts or res.errors:
             log.info("Open Banking: %s conti, %s nuovi movimenti, errori: %s", res.accounts, res.inserted, res.errors)
+        if res.inserted:
+            from app.services.refresh import refresh_all
+
+            refresh_all(session)
 
 
 async def bank_sync_loop() -> None:
@@ -133,6 +137,26 @@ def create_app() -> FastAPI:
         response.headers.setdefault("Referrer-Policy", "same-origin")
         if request.url.scheme == "https":
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+        return response
+
+    # Dopo ogni modifica andata a buon fine (salvataggi, caricamenti, cancellazioni) si riallineano i dati collegati:
+    # ricorrenze, categorie, giroconti, abbinamenti fatture/pagamenti, Excel per il commercialista.
+    NO_REFRESH = ("/login", "/logout", "/assistente", "/impostazioni/backup", "/apri-cartella", "/pacchetto")
+
+    @app.middleware("http")
+    async def refresh_related(request: Request, call_next):
+        response = await call_next(request)
+        if request.method == "POST" and response.status_code < 400 and not request.url.path.startswith(NO_REFRESH):
+            from app.services.refresh import refresh_all
+
+            def job():
+                with SessionLocal() as session:
+                    refresh_all(session)
+
+            try:
+                await asyncio.to_thread(job)
+            except Exception:  # l'aggiornamento non deve mai far fallire la richiesta dell'utente
+                log.exception("Aggiornamento dei dati collegati non riuscito")
         return response
 
     @app.middleware("http")

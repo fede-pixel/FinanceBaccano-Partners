@@ -302,5 +302,6 @@ def reconcile_auto(session: Session = Depends(get_session)):
 def reconcile_unmatch(tx_id: int = Form(...), back: str = Form("/riconciliazione"), session: Session = Depends(get_session)):
     tx = session.get(Transaction, tx_id) or _404()
     reconcile.unmatch(session, tx)
+    tx.no_auto_match = True  # scollegato a mano: l'app non lo riabbina da sola
     session.commit()
     return redirect(back if back.startswith("/") else "/riconciliazione", msg="Abbinamento rimosso")

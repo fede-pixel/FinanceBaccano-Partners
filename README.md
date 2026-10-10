@@ -169,6 +169,20 @@ L'app ricava dalla descrizione il nome dell'esercente, togliendo le parti bancar
 
 Quando una categoria è sbagliata, correggila in **Movimenti**: l'app crea una regola e la applica a tutti i movimenti dello stesso fornitore, presenti e futuri. Le categorie scelte a mano non vengono mai sovrascritte.
 
+## Dati sempre allineati
+
+Saldi, forecast, KPI, IVA, capacità di investimento, situazione fatture e schede cliente sono calcolati ogni volta che apri la pagina, quindi riflettono sempre gli ultimi dati.
+
+I dati salvati che dipendono da altri vengono riallineati in automatico dopo ogni salvataggio, caricamento o cancellazione, e dopo ogni sincronizzazione Open Banking:
+- voci previste delle ricorrenze;
+- categorie automatiche e giroconti tra conti propri;
+- abbinamenti fatture/pagamenti;
+- Excel dei movimenti generati per il commercialista.
+
+Per i periodi già inviati gli Excel non vengono toccati: lo scadenzario avvisa se i movimenti sono cambiati dopo l'invio.
+
+Le scelte fatte a mano restano: categorie scelte da te, abbinamenti scollegati (l'app non li rifà, li propone soltanto), fatture dichiarate "non pagate".
+
 ## Come funziona il forecast
 
 - **Saldo di un conto** = ultimo *saldo certo* (inserito a mano, oppure letto dalla colonna saldo del file importato) + movimenti successivi.

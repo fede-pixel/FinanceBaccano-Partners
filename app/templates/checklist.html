@@ -25,6 +25,11 @@
 </div>
 {%- endmacro %}
 {% block content %}
+{% if stale_sent %}
+<div class="alert warn small"><strong>Movimenti modificati dopo l'invio al commercialista:</strong>
+  {% for it in stale_sent %}<a href="/documenti/voce/{{ it.id }}">{{ it.category.name }} – {{ period_label(it.period_key) }}</a>{{ ', ' if not loop.last }}{% endfor %}.
+  Gli Excel inviati non corrispondono più ai movimenti in app: rigenerali dalla voce e mandali di nuovo, se la modifica riguarda il commercialista.</div>
+{% endif %}
 <div class="page-head">
   <div><h1>Scadenzario documenti</h1>
   <div class="muted">Documenti da consegnare al commercialista: mensili entro il 6 del mese successivo, estratti conto trimestrali dal 15 del mese dopo la chiusura del trimestre.</div></div>

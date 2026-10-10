@@ -147,6 +147,11 @@ def _remember_presumed(it: PlannedItem) -> None:
         it.prior_paid_date = it.paid_date or it.due_date
 
 
+def _manual_only(tx: Transaction, items: list[PlannedItem]) -> bool:
+    """Abbinamento che l'utente ha già rifiutato (scollegato o "non è pagata"): si propone, non si fa da solo."""
+    return bool(tx.no_auto_match) or any(it.no_auto_match for it in items)
+
+
 def settle(session: Session, tx: Transaction, items: list[PlannedItem]) -> None:
     """Collega il movimento alle scadenze che salda."""
     for n, it in enumerate(items):
@@ -176,7 +181,7 @@ def compensate_credit_notes(session: Session, items: list[PlannedItem]) -> int:
     """Nota di credito aperta che annulla una fattura aperta dello stesso fornitore/cliente e di pari importo."""
     by_party: dict[tuple[str, str], list[PlannedItem]] = defaultdict(list)
     for it in items:
-        if it.status == "previsto":
+        if it.status == "previsto" and not it.no_auto_match:
             by_party[(it.invoice.direction, it.invoice.counterparty_vat or it.invoice.counterparty.lower())].append(it)
     n = 0
     for group in by_party.values():
@@ -267,7 +272,7 @@ def run(session: Session, apply: bool = True) -> MatchResult:
             continue
         used_tx.add(tx.id)
         used_it.add(it.id)
-        if apply:
+        if apply and not _manual_only(tx, [it]):
             settle(session, tx, [it])
             res.matched += 1
         else:
@@ -304,7 +309,7 @@ def run(session: Session, apply: bool = True) -> MatchResult:
         combo = list(found[0])
         used_tx.add(tx.id)
         used_it.update(it.id for it in combo)
-        if apply and len(found) == 1:
+        if apply and len(found) == 1 and not _manual_only(tx, combo):
             settle(session, tx, combo)
             res.matched += len(combo)
         else:
@@ -340,7 +345,7 @@ def run(session: Session, apply: bool = True) -> MatchResult:
         if len(free) == 1 and len(claims[free[0].id]) == 1:
             used_tx.add(tx_id)
             used_it.add(free[0].id)
-            if apply:
+            if apply and not _manual_only(tx, free):
                 settle(session, tx, free)
                 res.matched += 1
             else:

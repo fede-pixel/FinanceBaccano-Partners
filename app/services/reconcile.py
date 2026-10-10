@@ -54,12 +54,14 @@ def suggest_matches(session: Session, tolerance_days: int = 7, since: date | Non
         if best:
             score, it = best
             used.add(it.id)
-            certain = abs(it.amount_cents) == abs(tx.amount_cents) and abs((tx.date - it.due_date).days) <= 3
+            certain = (abs(it.amount_cents) == abs(tx.amount_cents) and abs((tx.date - it.due_date).days) <= 3
+                       and not tx.no_auto_match and not it.no_auto_match)
             out.append(Suggestion(tx, it, score, certain))
     return out
 
 
 def match(session: Session, tx: Transaction, item: PlannedItem) -> None:
+    tx.no_auto_match = item.no_auto_match = False  # scelta confermata
     tx.planned_item_id = item.id
     item.status = "pagato"
     item.paid_date = tx.date

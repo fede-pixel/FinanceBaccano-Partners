@@ -139,8 +139,11 @@ def confirm(tx_ids: str = Form(...), item_ids: str = Form(...), session: Session
     if not txs or not items or any(x is None for x in txs + items):
         raise HTTPException(404, "Non trovato")
     for tx in txs:
+        tx.no_auto_match = False  # abbinamento scelto da te
         if tx.planned_item_id:
             reconcile.unmatch(session, tx)
+    for it in items:
+        it.no_auto_match = False
     if len(txs) > 1:
         invoice_match.settle_installments(session, txs, items[0])
         msg = f"Abbinato: fattura saldata da {len(txs)} acconti"
@@ -157,8 +160,9 @@ def unlink(tx_id: int = Form(...), back: str = Form("/fatture/situazione?vista=p
     if tx is None:
         raise HTTPException(404, "Non trovato")
     reconcile.unmatch(session, tx)
+    tx.no_auto_match = True  # non riabbinarlo da solo
     session.commit()
-    return redirect(back, msg="Abbinamento annullato: le fatture tornano da saldare")
+    return redirect(back, msg="Abbinamento annullato: le fatture tornano da saldare (l'app non lo rifarà da sola)")
 
 
 @router.post("/fatture/situazione/segna")
@@ -172,6 +176,7 @@ def mark(item_ids: str = Form(...), action: str = Form("pagata"), paid_date: str
             continue
         if action == "riapri":
             it.status, it.paid_date, it.settlement = "previsto", None, ""
+            it.no_auto_match = True  # l'hai detto tu: non va considerata pagata in automatico
         else:
             it.status, it.settlement = "pagato", "manuale"
             it.paid_date = parse_date(paid_date) or date.today()

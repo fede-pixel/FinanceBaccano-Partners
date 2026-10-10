@@ -108,6 +108,8 @@ class Transaction(Base):
     planned_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("planned_items.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # l'utente ha scollegato a mano un abbinamento: niente più abbinamenti automatici (solo proposte)
+    no_auto_match: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     account: Mapped[Account] = relationship()
@@ -193,6 +195,8 @@ class PlannedItem(Base):
     match_batch: Mapped[str] = mapped_column(String(20), default="")
     # era già segnata pagata (senza movimento) prima dell'abbinamento: scollegando si torna a quella data
     prior_paid_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # l'utente ha detto che non è pagata: niente abbinamenti automatici (solo proposte)
+    no_auto_match: Mapped[bool] = mapped_column(Boolean, default=False)
 
     account: Mapped[Account | None] = relationship()
     invoice: Mapped[Invoice | None] = relationship(back_populates="planned_items")
