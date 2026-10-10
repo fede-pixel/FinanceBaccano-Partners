@@ -198,7 +198,7 @@ def test_confirm_all_and_undo(client):
         states = {x.invoice.number: x.state for x in im.invoice_statuses(s)}
         assert states == {"10": "pagata", "20": "pagata", "55": "pagata", "99": "aperta"}
     paid = client.get(f"/fatture/situazione?vista=pagate&lotto={lotto}")
-    assert "Annulla la conferma in blocco" in paid.text and "Solo conferma in blocco" in paid.text
+    assert "Annulla l'operazione in blocco" in paid.text and "Solo conferma in blocco" in paid.text
     assert "Da confermare (" not in paid.text
     # prova inversa: annullo tutto e torno alla situazione di partenza
     r = client.post("/fatture/situazione/annulla-lotto", data={"lotto": lotto}, follow_redirects=False)
@@ -208,4 +208,35 @@ def test_confirm_all_and_undo(client):
         assert states == {"10": "aperta", "20": "aperta", "55": "aperta", "99": "aperta"}
         assert s.query(Transaction).filter(Transaction.planned_item_id.is_not(None)).count() == 0
     page = client.get("/fatture/situazione")
-    assert "Da confermare (3)" in page.text and "Annulla la conferma in blocco" not in page.text
+    assert "Da confermare (3)" in page.text and "Annulla l'operazione in blocco" not in page.text
+
+
+def test_invoices_before_imported_movements(client):
+    from app.db import SessionLocal
+
+    with SessionLocal() as s:
+        acc = _acc(s)
+        rev = Account(name="Revolut", bank="Revolut")
+        s.add(rev)
+        s.flush()
+        _tx(s, acc, date(2026, 1, 5), -1000, "commissioni")
+        _tx(s, rev, date(2026, 3, 1), -1000, "canone")  # Revolut caricato solo da marzo
+        _inv(s, "1", "Cliente Uno Srl", 50000, date(2025, 12, 10), direction="attiva")
+        _inv(s, "2", "Cliente Due Srl", 70000, date(2026, 2, 20), direction="attiva")
+        _inv(s, "3", "Cliente Tre Srl", 90000, date(2026, 4, 1), direction="attiva")
+        s.commit()
+        cov = im.coverage(s)
+        assert cov.start == date(2026, 3, 1) and len(cov.accounts) == 2
+    page = client.get("/fatture/situazione?vista=incassare")
+    assert "2 fatture emesse aperte" in page.text and "dal 01/03/2026" in page.text and "prima dei movimenti" in page.text
+    only = client.get("/fatture/situazione?vista=incassare&anteriori=1")
+    assert "Cliente Uno" in only.text and "Cliente Due" in only.text and "Cliente Tre" not in only.text
+    r = client.post("/fatture/situazione/segna-anteriori", data={"vista": "incassare"}, follow_redirects=False)
+    lotto = r.headers["location"].split("lotto=")[1].split("&")[0]
+    with SessionLocal() as s:
+        st = {x.invoice.number: x.state for x in im.invoice_statuses(s)}
+        assert st == {"1": "presunta", "2": "presunta", "3": "aperta"}
+    client.post("/fatture/situazione/annulla-lotto", data={"lotto": lotto})
+    with SessionLocal() as s:
+        st = {x.invoice.number: x.state for x in im.invoice_statuses(s)}
+        assert st == {"1": "aperta", "2": "aperta", "3": "aperta"}

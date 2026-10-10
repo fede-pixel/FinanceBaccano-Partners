@@ -22,11 +22,18 @@ VIEWS = {
 }
 
 
-def _rows(session: Session, vista: str, q: str = "", lotto: str = "") -> list[invoice_match.InvoiceStatus]:
+def _before(rows: list[invoice_match.InvoiceStatus], start: date | None) -> list[invoice_match.InvoiceStatus]:
+    """Fatture aperte con data anteriore al periodo coperto dai movimenti: il pagamento può essere avvenuto prima."""
+    return [s for s in rows if start and s.state == "aperta" and s.invoice.date < start]
+
+
+def _rows(session: Session, vista: str, q: str = "", lotto: str = "", anteriori: bool = False) -> list[invoice_match.InvoiceStatus]:
     direction, states, _ = VIEWS[vista]
     rows = [s for s in invoice_match.invoice_statuses(session, direction) if s.state in states]
     if lotto:
         rows = [s for s in rows if any(it.match_batch == lotto for it in s.items)]
+    if anteriori:
+        rows = _before(rows, invoice_match.coverage(session).start)
     if q:
         ql = q.lower()
         rows = [s for s in rows if ql in s.invoice.counterparty.lower() or ql in s.invoice.number.lower()]
@@ -38,7 +45,8 @@ def _rows(session: Session, vista: str, q: str = "", lotto: str = "") -> list[in
 
 
 @router.get("/fatture/situazione")
-def situation(request: Request, vista: str = "pagare", q: str = "", lotto: str = "", session: Session = Depends(get_session)):
+def situation(request: Request, vista: str = "pagare", q: str = "", lotto: str = "", anteriori: int = 0,
+              session: Session = Depends(get_session)):
     if vista not in VIEWS:
         vista = "pagare"
     result = invoice_match.run(session)  # gli abbinamenti certi si fanno da soli a ogni apertura
@@ -46,9 +54,14 @@ def situation(request: Request, vista: str = "pagare", q: str = "", lotto: str =
     all_rows = invoice_match.invoice_statuses(session)
     today = date.today()
 
+    cov = invoice_match.coverage(session)
+
     def kpi(direction, state="aperta"):
         rows = [s for s in all_rows if s.state == state and (direction is None or s.invoice.direction == direction)]
+        before = _before(rows, cov.start)
         return {
+            "before_count": len(before),
+            "before_total": sum(s.open_cents for s in before),
             "count": len(rows),
             "total": sum(s.open_cents if state == "aperta" else s.paid_cents for s in rows),
             "overdue": sum(s.open_cents for s in rows if s.due and s.due < today),
@@ -61,12 +74,13 @@ def situation(request: Request, vista: str = "pagare", q: str = "", lotto: str =
         if result.compensated:
             auto += f", {result.compensated} note di credito compensate"
         msg = f"{msg} · {auto}" if msg else auto
-    last = get_setting(session, "last_match_batch").split("|")  # lotto|data e ora dell'ultima "Conferma tutte"
+    last = get_setting(session, "last_match_batch").split("|")  # lotto|data e ora|descrizione dell'ultima azione in blocco
     last_batch = last[0] if invoice_match.batch_size(session, last[0]) else ""
     return render(
-        request, "invoice_status.html", vista=vista, views=VIEWS, q=q, rows=_rows(session, vista, q, lotto),
-        proposals=result.proposals, msg=msg, lotto=lotto,
+        request, "invoice_status.html", vista=vista, views=VIEWS, q=q, rows=_rows(session, vista, q, lotto, bool(anteriori)),
+        proposals=result.proposals, msg=msg, lotto=lotto, anteriori=anteriori, cov=cov,
         last_batch=last_batch, last_batch_at=last[1] if len(last) > 1 else "",
+        last_batch_label=last[2] if len(last) > 2 else "Conferma in blocco",
         last_batch_size=invoice_match.batch_size(session, last_batch),
         k_pay=kpi("passiva"), k_inc=kpi("attiva"), k_pres=kpi(None, "presunta"), k_paid=kpi(None, "pagata"),
     )
@@ -78,12 +92,29 @@ def confirm_all(session: Session = Depends(get_session)):
 
     batch, n = invoice_match.confirm_all(session)
     if n:
-        set_setting(session, "last_match_batch", f"{batch}|{datetime.now():%d/%m/%Y %H:%M}")
+        set_setting(session, "last_match_batch", f"{batch}|{datetime.now():%d/%m/%Y %H:%M}|Conferma in blocco")
     session.commit()
     if not n:
         return redirect("/fatture/situazione", msg="Nessuna proposta da confermare")
     return redirect(f"/fatture/situazione?vista=pagate&lotto={batch}",
                     msg=f"Confermati in blocco {n} abbinamenti: qui sotto solo quelli, controllali. Puoi annullarli tutti con un clic.")
+
+
+@router.post("/fatture/situazione/segna-anteriori")
+def mark_before(vista: str = Form("incassare"), session: Session = Depends(get_session)):
+    """Segna pagate/incassate (senza movimento) le fatture aperte anteriori ai movimenti importati."""
+    from datetime import datetime
+
+    if vista not in ("pagare", "incassare"):
+        vista = "incassare"
+    rows = _rows(session, vista, anteriori=True)
+    batch, n = invoice_match.mark_presumed(session, rows)
+    if n:
+        label = "Fatture anteriori ai movimenti segnate " + ("incassate" if vista == "incassare" else "pagate")
+        set_setting(session, "last_match_batch", f"{batch}|{datetime.now():%d/%m/%Y %H:%M}|{label}")
+    session.commit()
+    return redirect(f"/fatture/situazione?vista=presunte&lotto={batch}",
+                    msg=f"{len(rows)} fatture anteriori ai movimenti segnate come saldate (senza movimento). Puoi annullare con un clic.")
 
 
 @router.post("/fatture/situazione/annulla-lotto")
@@ -92,7 +123,7 @@ def undo_batch(lotto: str = Form(...), session: Session = Depends(get_session)):
     if get_setting(session, "last_match_batch").startswith(lotto):
         set_setting(session, "last_match_batch", "")
     session.commit()
-    return redirect("/fatture/situazione", msg=f"Annullata la conferma in blocco: {n} fatture tornano da saldare e le proposte da confermare")
+    return redirect("/fatture/situazione", msg=f"Annullato: {n} scadenze tornate com'erano prima")
 
 
 def _ids(raw: str) -> list[int]:

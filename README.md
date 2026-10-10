@@ -107,7 +107,9 @@ Il controllo parte da solo a ogni caricamento di movimenti o fatture e a ogni ap
 - **acconti**: più pagamenti alla stessa controparte che sommati danno esattamente l'importo della fattura vengono proposti in **Da confermare** (conferma manuale);
 - note di credito di pari importo compensano la fattura.
 
-**Conferma tutte** conferma in un colpo tutte le proposte da confermare; la pagina mostra poi solo quegli abbinamenti e il pulsante **Annulla la conferma in blocco** riporta tutto esattamente com'era (anche le fatture che erano "pagate senza movimento").
+**Conferma tutte** conferma in un colpo tutte le proposte da confermare; la pagina mostra poi solo quegli abbinamenti e il pulsante **Annulla l'operazione in blocco** riporta tutto esattamente com'era (anche le fatture che erano "pagate senza movimento").
+
+**Periodo coperto dai movimenti:** l'app indica da quale data tutti i conti hanno movimenti importati. Le fatture aperte con data anteriore sono segnate "prima dei movimenti", perché il pagamento potrebbe essere avvenuto prima e non è verificabile. Si possono filtrare e, se sono saldate, segnare tutte insieme (annullabile).
 
 Ogni vista si scarica in Excel. "Segna pagata" serve per i pagamenti da conti non caricati in app.
 

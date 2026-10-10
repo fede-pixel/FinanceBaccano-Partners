@@ -10,9 +10,11 @@
 
 <div class="kpis">
   <a class="kpi" href="?vista=pagare"><div class="label">Fatture ricevute da pagare</div><div class="value">{{ k_pay.total|eur }}</div>
-    <div class="sub">{{ k_pay.count }} fatture{% if k_pay.overdue_count %} · <span class="neg">{{ k_pay.overdue_count }} scadute per {{ k_pay.overdue|eur }}</span>{% endif %}</div></a>
+    <div class="sub">{{ k_pay.count }} fatture{% if k_pay.overdue_count %} · <span class="neg">{{ k_pay.overdue_count }} scadute per {{ k_pay.overdue|eur }}</span>{% endif %}</div>
+    {% if k_pay.before_count %}<div class="sub">di cui {{ k_pay.before_count }} anteriori ai movimenti ({{ k_pay.before_total|eur }})</div>{% endif %}</a>
   <a class="kpi" href="?vista=incassare"><div class="label">Fatture emesse da incassare</div><div class="value">{{ k_inc.total|eur }}</div>
-    <div class="sub">{{ k_inc.count }} fatture{% if k_inc.overdue_count %} · <span class="neg">{{ k_inc.overdue_count }} scadute per {{ k_inc.overdue|eur }}</span>{% endif %}</div></a>
+    <div class="sub">{{ k_inc.count }} fatture{% if k_inc.overdue_count %} · <span class="neg">{{ k_inc.overdue_count }} scadute per {{ k_inc.overdue|eur }}</span>{% endif %}</div>
+    {% if k_inc.before_count %}<div class="sub">di cui {{ k_inc.before_count }} anteriori ai movimenti ({{ k_inc.before_total|eur }})</div>{% endif %}</a>
   <a class="kpi" href="?vista=presunte"><div class="label">Pagate senza movimento</div><div class="value">{{ k_pres.count }}</div>
     <div class="sub">segnate pagate, pagamento non trovato</div></a>
   <a class="kpi" href="?vista=pagate"><div class="label">Pagate e incassate verificate</div><div class="value">{{ k_paid.count }}</div>
@@ -21,10 +23,10 @@
 
 {% if last_batch %}
 <div class="alert info" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-  <div style="flex:1;min-width:260px"><strong>Conferma in blocco del {{ last_batch_at }}:</strong> {{ last_batch_size }} fatture abbinate.
-    <a href="?vista=pagate&lotto={{ last_batch }}">Vedi solo queste</a></div>
-  <form method="post" action="/fatture/situazione/annulla-lotto" data-confirm="Annullare tutti gli abbinamenti confermati in blocco? Le fatture tornano da saldare e le proposte tornano da confermare.">
-    <input type="hidden" name="lotto" value="{{ last_batch }}"><button class="ghost">Annulla la conferma in blocco</button></form>
+  <div style="flex:1;min-width:260px"><strong>{{ last_batch_label }} ({{ last_batch_at }}):</strong> {{ last_batch_size }} scadenze.
+    <a href="?vista={{ 'presunte' if 'anteriori' in last_batch_label else 'pagate' }}&lotto={{ last_batch }}">Vedi solo queste</a></div>
+  <form method="post" action="/fatture/situazione/annulla-lotto" data-confirm="Annullare l'operazione in blocco? Le fatture tornano com'erano prima.">
+    <input type="hidden" name="lotto" value="{{ last_batch }}"><button class="ghost">Annulla l'operazione in blocco</button></form>
 </div>
 {% endif %}
 
@@ -66,6 +68,24 @@
   <button class="ghost">Cerca</button>
 </form>
 
+{% if vista in ('pagare', 'incassare') and cov.start %}
+{% set kk = k_inc if vista == 'incassare' else k_pay %}
+<div class="alert {{ 'warn' if kk.before_count else 'info' }} small">
+  <strong>Periodo coperto dai movimenti:</strong> dal {{ cov.start|d }} (data dalla quale tutti i conti hanno movimenti importati:
+  {% for n, a, b, c in cov.accounts %}{{ n }} dal {{ a|d }} al {{ b|d }}{{ ', ' if not loop.last }}{% endfor %}).
+  {% if kk.before_count %}
+  <div style="margin-top:6px"><strong>{{ kk.before_count }} fatture {{ 'emesse' if vista == 'incassare' else 'ricevute' }} aperte ({{ kk.before_total|eur }}) hanno data anteriore al {{ cov.start|d }}:</strong>
+  {{ "l'incasso" if vista == 'incassare' else 'il pagamento' }} potrebbe essere avvenuto prima dei movimenti caricati, quindi l'app non può verificarlo.
+  Carica i movimenti dei mesi precedenti, oppure, se sai che sono saldate, segnale tutte insieme (annullabile).</div>
+  <div class="toolbar" style="margin-top:8px">
+    <a href="?vista={{ vista }}&anteriori=1">Mostra solo queste</a>{% if anteriori %} · <a href="?vista={{ vista }}">mostra tutte</a>{% endif %}
+    <form method="post" action="/fatture/situazione/segna-anteriori" data-confirm="Segnare come {{ 'incassate' if vista == 'incassare' else 'pagate' }} le {{ kk.before_count }} fatture anteriori al {{ cov.start|d }}? Potrai annullare con un clic.">
+      <input type="hidden" name="vista" value="{{ vista }}"><button class="small ghost">Segna tutte come {{ 'incassate' if vista == 'incassare' else 'pagate' }}</button></form>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="card">
   {% if vista == 'presunte' %}
   <p class="small muted">Fatture risultate pagate senza un movimento collegato: pagate con carta o in contanti secondo il report di Aruba, segnate "Pagata", oppure scadute prima della data indicata nell'import. Quando carichi i movimenti del periodo, l'app cerca il pagamento e le sposta tra le verificate.</p>
@@ -84,6 +104,7 @@
         {% if vista in ('pagare', 'incassare') %}
         <td style="white-space:nowrap">{{ s.due|d }}
           {% if s.overdue_days > 0 %}<span class="badge crit">scaduta da {{ s.overdue_days }} gg</span>{% endif %}
+          {% if cov.start and inv.date < cov.start %}<span class="badge plain" title="Fattura anteriore ai movimenti importati: il pagamento potrebbe non essere verificabile">prima dei movimenti</span>{% endif %}
           {% if s.items|selectattr('estimated_date')|list %}<span class="badge warn" title="La fattura non indica la scadenza: stimata dalla data fattura">stimata</span>{% endif %}</td>
         <td class="num">{{ s.open_cents|eur }}{% if s.open_cents != inv.total_cents|abs and inv.total_cents %}<div class="small muted">tot. {{ inv.total_cents|eur }}</div>{% endif %}</td>
         <td class="actions"><details><summary class="small">Segna pagata</summary>

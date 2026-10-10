@@ -476,6 +476,8 @@ def undo_batch(session: Session, batch: str) -> int:
     for t in txs.values():
         reconcile.unmatch(session, t)
     for it in items:
+        if it.match_batch and not it.transactions and not it.payment_tx_id:
+            reconcile._reopen(it)  # segnate pagate in blocco senza movimento
         it.match_batch = ""
     session.flush()
     return len(items)
@@ -485,3 +487,42 @@ def batch_size(session: Session, batch: str) -> int:
     if not batch:
         return 0
     return len(list(session.scalars(select(PlannedItem.id).where(PlannedItem.match_batch == batch))))
+
+
+# ---------- periodo coperto dai movimenti ----------
+
+@dataclass
+class Coverage:
+    start: date | None  # da quando TUTTI i conti hanno movimenti (prima, un incasso/pagamento può mancare)
+    accounts: list[tuple[str, date, date, int]]  # (conto, primo movimento, ultimo, n°)
+
+
+def coverage(session: Session) -> Coverage:
+    from sqlalchemy import func
+
+    from app.models import Account
+
+    rows = session.execute(
+        select(Account.name, func.min(Transaction.date), func.max(Transaction.date), func.count(Transaction.id))
+        .join(Transaction, Transaction.account_id == Account.id)
+        .where(Account.active)
+        .group_by(Account.id)
+        .order_by(func.min(Transaction.date))
+    ).all()
+    accounts = [(n, a, b, c) for n, a, b, c in rows]
+    return Coverage(max((a for _, a, _, _ in accounts), default=None), accounts)
+
+
+def mark_presumed(session: Session, statuses: list["InvoiceStatus"]) -> tuple[str, int]:
+    """Segna come pagate (senza movimento) le scadenze aperte di queste fatture, con un lotto annullabile."""
+    import uuid
+
+    batch = uuid.uuid4().hex[:10]
+    n = 0
+    for st in statuses:
+        for it in st.items:
+            if it.status == "previsto":
+                it.status, it.paid_date, it.settlement, it.match_batch = "pagato", it.due_date, "", batch
+                n += 1
+    session.flush()
+    return batch, n
