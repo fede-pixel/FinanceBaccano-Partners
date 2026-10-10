@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Caricamento settimanale{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Caricamento settimanale</h1>
+  <div class="muted">Trascina qui tutto insieme: l'app riconosce ogni file e lo mette al posto giusto. Prima di salvare ti mostra cosa ha capito.</div></div>
+</div>
+{% if not accounts %}<div class="alert warn">Prima crea i tuoi <a href="/conti/nuovo">conti e carte</a>, così l'app sa a quale conto associare gli estratti.</div>{% endif %}
+<div class="grid grid-2" style="align-items:start">
+<div class="card">
+  <form method="post" action="/carica" enctype="multipart/form-data">
+    <div class="dropzone field" style="padding:48px 20px">
+      <div class="dz-label" data-empty="Trascina qui tutti i file della settimana" style="font-size:16px">Trascina qui tutti i file della settimana</div>
+      <input type="file" name="files" multiple required style="margin-top:14px">
+    </div>
+    <button>Analizza i file →</button>
+  </form>
+</div>
+<div class="card small">
+  <h3>Cosa caricare, ogni settimana</h3>
+  <table><tbody>
+    <tr><td><strong>Movimenti</strong> di Revolut, Vivid, BCC</td><td>CSV o Excel dall'home banking, dall'ultimo caricamento a oggi (sovrapporre i giorni non crea doppioni)</td></tr>
+    <tr><td><strong>Fatture</strong> emesse e ricevute</td><td>XML, P7M o ZIP scaricati da Aruba</td></tr>
+    <tr><td><strong>Ricevute fornitori esteri</strong></td><td>PDF di Google, AWS, Meta…</td></tr>
+    <tr><td><strong>Spese senza fattura elettronica</strong></td><td>foto o PDF di scontrini, autostrada, assicurazioni…</td></tr>
+    <tr><td><strong>Assegni</strong>, estratti conto carte e trimestrali</td><td>PDF o foto</td></tr>
+  </tbody></table>
+  <p class="muted" style="margin-top:8px">Consiglio: metti nel nome del file parole come "telepass", "assegno emesso", "carta", "trimestrale" o una data (2026-09): l'app li smista meglio. Puoi sempre correggere prima di salvare.</p>
+  <p class="muted">Il primo estratto di ogni banca richiede una volta sola di indicare le colonne; dalle settimane successive è automatico.</p>
+</div>
+</div>
+{% endblock %}

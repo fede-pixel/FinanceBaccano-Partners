@@ -22,6 +22,7 @@ env.globals["MONTHS_IT"] = MONTHS_IT
 NAV = [
     ("Finance", [
         ("/", "Dashboard"),
+        ("/carica", "Caricamento settimanale"),
         ("/forecast", "Forecast"),
         ("/previsti", "Entrate e uscite previste"),
         ("/movimenti", "Movimenti"),
@@ -29,13 +30,12 @@ NAV = [
         ("/fatture", "Fatture (Aruba)"),
         ("/ricorrenze", "Ricorrenze"),
         ("/conti", "Conti e carte"),
-        ("/banche", "Banche collegate"),
     ]),
     ("Administration", [
         ("/documenti", "Scadenzario documenti"),
         ("/pacchetto", "Pacchetto commercialista"),
     ]),
-    ("", [("/impostazioni", "Impostazioni")]),
+    ("", [("/impostazioni", "Impostazioni"), ("/banche", "Open Banking (opzionale)")]),
 ]
 env.globals["NAV"] = NAV
 

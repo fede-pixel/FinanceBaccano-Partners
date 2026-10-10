@@ -8,9 +8,8 @@
     <div class="muted">{{ today|wd }} {{ today|d }}</div>
   </div>
   <div class="toolbar" style="margin:0">
-    {% if has_banks %}<form method="post" action="/banche/sincronizza"><input type="hidden" name="back" value="/"><button>Aggiorna dalle banche</button></form>{% endif %}
-    <a class="btn {{ 'btn-ghost' if has_banks }}" href="/movimenti/import">Importa movimenti</a>
-    <a class="btn btn-ghost" href="/fatture">Importa fatture</a>
+    {% if has_banks %}<form method="post" action="/banche/sincronizza"><input type="hidden" name="back" value="/"><button class="ghost">Aggiorna dalle banche</button></form>{% endif %}
+    <a class="btn" href="/carica">Caricamento settimanale</a>
   </div>
 </div>
 
@@ -19,8 +18,15 @@
   <strong>Primi passi.</strong>
   1) Inserisci i dati aziendali nelle <a href="/impostazioni">Impostazioni</a> (P.IVA ed email del commercialista).
   2) Crea i tuoi <a href="/conti/nuovo">conti e carte</a> (Vivid, Revolut Business, BCC, cassa contanti) con il saldo iniziale.
-  3) <a href="/movimenti/import">Importa i movimenti</a> e le <a href="/fatture">fatture XML di Aruba</a>.
+  3) Fai il primo <a href="/carica">caricamento settimanale</a>: estratti delle banche, fatture XML di Aruba, ricevute.
   4) Aggiungi le <a href="/ricorrenze">uscite ricorrenti</a> (stipendi, F24, affitto…).
+</div>
+{% endif %}
+
+{% if has_accounts and (not last_upload or (today - last_upload.date()).days >= 7) %}
+<div class="alert info">
+  {% if last_upload %}L'ultimo caricamento è di {{ (today - last_upload.date()).days }} giorni fa{% else %}Non hai ancora fatto un caricamento{% endif %}:
+  saldi e forecast si basano sui dati caricati. <a href="/carica">Carica i file della settimana →</a>
 </div>
 {% endif %}
 

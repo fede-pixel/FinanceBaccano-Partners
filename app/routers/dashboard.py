@@ -68,7 +68,16 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         bank_alerts=bank_alerts,
         has_banks=session.scalar(select(BankConnection.id).limit(1)) is not None,
         stale_after=today - timedelta(days=7),
+        last_upload=_last_upload(session),
     )
+
+
+def _last_upload(session: Session) -> datetime | None:
+    raw = get_setting(session, "last_upload_at")
+    try:
+        return datetime.fromisoformat(raw) if raw else None
+    except ValueError:
+        return None
 
 
 @router.get("/forecast")

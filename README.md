@@ -45,9 +45,26 @@ FBP_DATA_DIR=~/FinanceBaccano-demo .venv/bin/python run.py
 6. **Riconciliazione**: abbina i movimenti importati alle voci previste. Gli abbinamenti certi si fanno con un clic.
 7. **Scadenzario documenti**: per ogni mese, carica i documenti per tipologia. Lista movimenti banche, carte e contanti si possono **generare in Excel** dai movimenti. Quando hai finito, apri **Pacchetto commercialista**: lo ZIP viene creato nella cartella Drive, l'email si apre già compilata e lo scadenzario viene segnato come inviato.
 
-## Open Banking (Enable Banking)
+## La routine settimanale (10 minuti)
 
-Pagina **Banche collegate**: saldi e movimenti si scaricano da soli (PSD2, sola lettura), all'avvio dell'app e poi ogni 6 ore mentre è aperta. Funziona anche il pulsante "Aggiorna dalle banche" in dashboard.
+1. Scarica dall'home banking i movimenti di Revolut, Vivid e BCC in CSV o Excel, dall'ultimo caricamento a oggi. Sovrapporre qualche giorno non crea doppioni.
+2. Scarica da Aruba le fatture emesse e ricevute (XML, P7M o ZIP).
+3. Raccogli PDF e foto di ricevute estere, scontrini, Telepass, assegni ed estratti conto delle carte.
+4. In app apri **Caricamento settimanale**, trascina tutto insieme, controlla cosa ha capito l'app e premi **Salva tutto**.
+
+L'app smista ogni file:
+- i movimenti vanno sul conto giusto, riconosciuto dal formato del file, dall'IBAN o dal nome del file;
+- le scadenze delle fatture finiscono nel forecast;
+- i documenti vanno nello scadenzario, con tipologia e mese ricavati dal nome del file;
+- i movimenti vengono abbinati in automatico alle voci previste quando la corrispondenza è certa.
+
+Il primo estratto di ogni banca chiede una volta sola quali sono le colonne. Se l'ultimo caricamento è di oltre 7 giorni fa, la dashboard te lo ricorda.
+
+## Open Banking (Enable Banking) – opzionale
+
+Non necessario se usi il caricamento settimanale.
+
+Pagina **Open Banking (opzionale)**: saldi e movimenti si scaricano da soli (PSD2, sola lettura), all'avvio dell'app e poi ogni 6 ore mentre è aperta. Funziona anche il pulsante "Aggiorna dalle banche" in dashboard.
 
 1. Crea un account su [enablebanking.com](https://enablebanking.com) → Control Panel → *API applications* → nuova applicazione **Production**, con redirect URL `http://127.0.0.1:8765/banche/callback`.
 2. Il browser scarica la chiave privata `.pem`: caricala in *Banche collegate → Configurazione* insieme all'Application ID.

@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from app import config
 from app.backup import run_backup
 from app.db import SessionLocal, init_engine
-from app.routers import accounts, admin, banks, dashboard, planning, settings
+from app.routers import accounts, admin, banks, dashboard, planning, settings, upload
 from app.services.admin_docs import ensure_checklist, seed_categories
 from app.services.recurrence import sync_all
 
@@ -78,7 +78,7 @@ def create_app() -> FastAPI:
                 return PlainTextResponse("Richiesta bloccata: origine non locale", status_code=403)
         return await call_next(request)
 
-    for r in (dashboard, accounts, banks, planning, admin, settings):
+    for r in (dashboard, upload, accounts, banks, planning, admin, settings):
         app.include_router(r.router)
     return app
 

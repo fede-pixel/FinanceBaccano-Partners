@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Controlla i file{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Controlla e conferma</h1><div class="muted">{{ batch.items|length }} file. Correggi solo dove serve, poi salva tutto.</div></div>
+  <a href="/carica">← Ricomincia</a>
+</div>
+<form method="post" action="/carica/{{ batch.id }}">
+<div class="card">
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>File</th><th>Tipo</th><th>Destinazione</th></tr></thead>
+    <tbody>
+    {% for it in batch.items %}{% set i = loop.index0 %}
+      <tr>
+        <td>{{ it.name }}{% if it.note %}<div class="small muted">{{ it.note }}</div>{% endif %}</td>
+        <td><select name="kind_{{ i }}">
+          {% for k, l in [('banca','Movimenti bancari'), ('fattura','Fattura elettronica'), ('documento','Documento per il commercialista'), ('ignora','Ignora')] %}
+          <option value="{{ k }}" {{ 'selected' if it.kind == k }}>{{ l }}</option>{% endfor %}
+        </select></td>
+        <td>
+          {% if it.kind == 'banca' %}
+            <select name="account_{{ i }}">
+              <option value="0">— scegli il conto —</option>
+              {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if it.account_id == a.id }}>{{ a.name }}</option>{% endfor %}
+            </select>
+            {% if not it.account_id %}<span class="badge warn">conto da scegliere</span>
+            {% elif not profiles.get(it.account_id) %}<span class="badge info">prima volta: indicherai le colonne</span>
+            {% else %}<span class="badge good">riconosciuto</span>{% endif %}
+          {% elif it.kind == 'fattura' %}
+            <span class="small muted">Scadenze in entrate/uscite previste</span>
+          {% else %}
+            <select name="category_{{ i }}">
+              {% for c in cats %}<option value="{{ c.code }}" {{ 'selected' if it.category == c.code }}>{{ c.name }}</option>{% endfor %}
+            </select>
+            <input type="month" name="period_{{ i }}" value="{{ it.period }}">
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="small muted" style="margin-top:8px">Se cambi il tipo di un file, salva: verrà trattato secondo il nuovo tipo (per i documenti viene usata la tipologia "Spese senza fattura elettronica" se non ne scegli un'altra).</p>
+</div>
+<button>Salva tutto</button>
+</form>
+{% endblock %}

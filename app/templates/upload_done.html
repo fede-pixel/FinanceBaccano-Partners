@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Caricamento completato{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Fatto</h1><a class="btn" href="/">Vai alla dashboard</a></div>
+<div class="kpis">
+  <div class="kpi"><div class="label">Movimenti nuovi</div><div class="value">{{ res.movements }}</div></div>
+  <div class="kpi"><div class="label">Fatture importate</div><div class="value">{{ res.invoices }}</div></div>
+  <div class="kpi"><div class="label">Documenti archiviati</div><div class="value">{{ res.documents }}</div></div>
+  <div class="kpi"><div class="label">Abbinati in automatico</div><div class="value">{{ res.matched }}</div><div class="sub">movimenti ↔ voci previste</div></div>
+</div>
+{% if res.lines %}<div class="card small">{% for l in res.lines %}<div>{{ l }}</div>{% endfor %}</div>{% endif %}
+{% if res.errors %}<div class="alert warn small">{% for e in res.errors %}<div>{{ e }}</div>{% endfor %}</div>{% endif %}
+{% if res.pending %}
+<div class="card">
+  <h2>Da completare ({{ res.pending|length }})</h2>
+  <p class="small">Per questi estratti serve indicare una volta le colonne (o il conto). Dalla prossima settimana saranno automatici.</p>
+  <table><tbody>
+  {% for it in res.pending %}
+    <tr><td>{{ it.name }}</td>
+      <td>{% if it.account_id %}{{ accounts[it.account_id].name }}{% else %}<span class="muted">conto non scelto</span>{% endif %}</td>
+      <td class="actions">{% if it.account_id %}<a class="btn btn-small" href="/movimenti/import/{{ it.token }}?conto={{ it.account_id }}">Indica le colonne →</a>
+        {% else %}<a class="btn btn-small btn-ghost" href="/carica/{{ batch.id }}">Scegli il conto</a>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody></table>
+</div>
+{% endif %}
+<div class="toolbar">
+  <a class="btn btn-ghost" href="/riconciliazione">Controlla gli abbinamenti</a>
+  <a class="btn btn-ghost" href="/documenti">Scadenzario documenti</a>
+  <a class="btn btn-ghost" href="/forecast">Forecast</a>
+</div>
+{% endblock %}
