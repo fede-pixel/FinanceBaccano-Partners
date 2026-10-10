@@ -18,6 +18,11 @@ from app.models import Invoice, PlannedItem
 from app.services.util import parse_amount
 
 CREDIT_NOTE_TYPES = {"TD04", "TD08"}  # nota di credito / nota di credito semplificata
+# Integrazioni/autofatture per reverse charge (es. servizi esteri come Google, Anthropic, AWS): documenti fiscali
+# emessi da noi stessi, il pagamento vero va al fornitore estero ed è già nei movimenti -> nessuna uscita prevista
+SELF_INVOICE_TYPES = {"TD16", "TD17", "TD18", "TD19", "TD20", "TD21", "TD27"}
+IMMEDIATE_METHODS = {"MP01", "MP08"}  # contanti e carta: la fattura arriva già pagata
+REPORT_EXT = (".xls", ".xlsx", ".csv")
 MODALITA = {
     "MP01": "contanti", "MP02": "assegno", "MP05": "bonifico", "MP08": "carta di pagamento",
     "MP12": "RIBA", "MP19": "SEPA Direct Debit", "MP21": "SEPA DD B2B", "MP23": "PagoPA",
@@ -162,6 +167,158 @@ def _vat_digits(v: str) -> str:
     return re.sub(r"^[A-Z]{2}", "", v.strip().upper().replace(" ", ""))
 
 
+def _existing(session: Session, direction: str, number: str, inv_date: date, vat: str, doc_type: str) -> Invoice | None:
+    """Stessa fattura già presente (ad es. importata prima come XML e ora dal report Excel, o viceversa)."""
+    vat = _vat_digits(vat)
+    for inv in session.scalars(select(Invoice).where(
+        Invoice.direction == direction, Invoice.number == number, Invoice.date == inv_date, Invoice.doc_type == doc_type
+    )):
+        if not vat or _vat_digits(inv.counterparty_vat) == vat:
+            return inv
+    return None
+
+
+# ---------- report Excel di Aruba ("ReportFattureRicevute.xls" / "ReportFattureEmesse.xls") ----------
+
+@dataclass
+class ReportRow:
+    sdi_id: str
+    file_name: str
+    number: str
+    date: date
+    doc_type: str
+    counterparty: str
+    vat: str
+    total_cents: int
+    to_pay_cents: int
+    method_code: str
+    paid: bool
+    paid_date: date | None
+
+
+def _report_header(rows: list[list[str]]) -> tuple[int, dict[str, int]] | None:
+    for i, row in enumerate(rows[:15]):
+        cols = {c.strip().lower(): n for n, c in enumerate(row) if c and c.strip()}
+        if "id sdi" in cols and "totale documento" in cols and "data documento" in cols:
+            return i, cols
+    return None
+
+
+def is_aruba_report(filename: str, content: bytes) -> bool:
+    if not filename.lower().endswith(REPORT_EXT):
+        return False
+    from app.services.bank_import import read_table
+
+    try:
+        return _report_header(read_table(content, filename)) is not None
+    except Exception:
+        return False
+
+
+def parse_aruba_report(filename: str, content: bytes) -> tuple[str, list[ReportRow], list[str]]:
+    """Restituisce (direzione ricavata dal report: attiva/passiva/"", righe, errori)."""
+    from app.services.bank_import import parse_date_value, read_table
+
+    rows = read_table(content, filename)
+    found = _report_header(rows)
+    if found is None:
+        raise ValueError("non è un report fatture di Aruba (mancano le colonne ID SdI / Totale documento)")
+    start, cols = found
+    if "fornitore" in cols or "ricevute" in filename.lower():
+        direction, party = "passiva", cols.get("fornitore")
+    elif any(k in cols for k in ("cliente", "destinatario", "committente")) or "emesse" in filename.lower():
+        direction, party = "attiva", cols.get("cliente", cols.get("destinatario", cols.get("committente")))
+    else:
+        direction, party = "", None
+
+    def get(row, key):
+        n = cols.get(key)
+        return row[n].strip() if n is not None and n < len(row) and row[n] else ""
+
+    out, errors = [], []
+    for i, row in enumerate(rows[start + 1:], start=start + 2):
+        if not any(c.strip() for c in row):
+            continue
+        number, sdi = get(row, "numero"), get(row, "id sdi")
+        d = parse_date_value(get(row, "data documento")[:10], "auto")
+        total = parse_amount(get(row, "totale documento"), ".")
+        if d is None:
+            errors.append(f"riga {i} (n. {number or '?'}): data documento mancante, saltata")
+            continue
+        if total is None:  # succede quando Aruba non riesce a leggere gli importi della fattura
+            errors.append(f"riga {i} (n. {number or '?'}): il report non riporta il totale, fattura archiviata senza scadenza "
+                          "(carica l'XML per avere l'importo)")
+            total = 0
+        net = parse_amount(get(row, "netto a pagare"), ".")
+        tipo = re.search(r"TD\d{2}", get(row, "tipo documento"))
+        method = re.match(r"MP\d{2}", get(row, "metodo di pagamento"))
+        out.append(ReportRow(
+            sdi_id=sdi, file_name=get(row, "nome file"), number=number, date=d,
+            doc_type=tipo.group(0) if tipo else "TD01",
+            counterparty=row[party].strip() if party is not None and party < len(row) else "",
+            vat=get(row, "p.iva") or get(row, "codice fiscale"),
+            total_cents=total, to_pay_cents=net if net is not None else total,
+            method_code=method.group(0) if method else "",
+            paid=get(row, "pagamenti").lower() == "pagata",
+            paid_date=parse_date_value(get(row, "data pagamento")[:10], "auto") if get(row, "data pagamento") else None,
+        ))
+    return direction, out, errors
+
+
+def _import_report(session, res, name, content, forced_direction, default_payment_days, account_id, paid_before) -> None:
+    try:
+        direction, rows, errors = parse_aruba_report(name, content)
+    except Exception as exc:
+        res.errors.append(f"{name}: {exc}")
+        return
+    if forced_direction in ("attiva", "passiva"):
+        direction = forced_direction
+    if not direction:
+        res.errors.append(f"{name}: non capisco se il report è di fatture emesse o ricevute: scegli il tipo nell'import")
+        return
+    res.errors.extend(f"{name}: {e}" for e in errors)
+    for r in rows:
+        key = hashlib.sha256(f"sdi:{r.sdi_id or (r.number, r.date, r.vat)}".encode()).hexdigest()
+        if session.scalar(select(Invoice.id).where(Invoice.file_hash == key)) or _existing(
+            session, direction, r.number, r.date, r.vat, r.doc_type
+        ):
+            res.duplicates.append(r.number)
+            continue
+        invoice = Invoice(
+            direction=direction, doc_type=r.doc_type, number=r.number, date=r.date, counterparty=r.counterparty,
+            counterparty_vat=r.vat, total_cents=r.total_cents, file_name=r.file_name or name, file_hash=key,
+        )
+        session.add(invoice)
+        session.flush()
+        res.imported.append(invoice)
+        if r.doc_type in SELF_INVOICE_TYPES or not r.to_pay_cents:
+            continue
+        sign = 1 if direction == "attiva" else -1
+        if r.doc_type in CREDIT_NOTE_TYPES:
+            sign = -sign
+        if r.paid:
+            due, estimated, status = r.paid_date or r.date, False, "pagato"
+        elif r.method_code in IMMEDIATE_METHODS:
+            due, estimated, status = r.date, False, "pagato"
+        else:
+            due, estimated = r.date + timedelta(days=default_payment_days), True
+            status = "pagato" if paid_before and due < paid_before else "previsto"
+        label = "Incasso" if sign > 0 else "Pagamento"
+        session.add(PlannedItem(
+            title=f"{label} fatt. {r.number} – {r.counterparty}",
+            amount_cents=sign * abs(r.to_pay_cents),
+            due_date=due,
+            account_id=account_id,
+            counterparty=r.counterparty,
+            category="Fatture attive" if direction == "attiva" else "Fatture passive",
+            source="fattura",
+            estimated_date=estimated,
+            invoice_id=invoice.id,
+            notes=MODALITA.get(r.method_code, r.method_code),
+            status=status,
+        ))
+
+
 @dataclass
 class InvoiceImportResult:
     imported: list[Invoice] = field(default_factory=list)
@@ -183,6 +340,9 @@ def import_invoices(
     res = InvoiceImportResult()
     our_vat = _vat_digits(company_vat)
     for upload_name, content in files:
+        if upload_name.lower().endswith(REPORT_EXT):
+            _import_report(session, res, upload_name, content, forced_direction, default_payment_days, account_id, paid_before)
+            continue
         try:
             entries = list(iter_invoice_files(upload_name, content))
         except zipfile.BadZipFile:
@@ -216,6 +376,13 @@ def import_invoices(
                     continue
                 counterparty = inv.customer_name if direction == "attiva" else inv.supplier_name
                 cp_vat = inv.customer_vat if direction == "attiva" else inv.supplier_vat
+                old = _existing(session, direction, inv.number, inv.date, cp_vat, inv.doc_type)
+                if old is not None and old.total_cents == 0 and not old.planned_items:
+                    session.delete(old)  # riga del report Excel senza importi: l'XML la sostituisce
+                    session.flush()
+                elif old is not None:
+                    res.duplicates.append(name)
+                    continue
                 invoice = Invoice(
                     direction=direction,
                     doc_type=inv.doc_type,
@@ -233,6 +400,9 @@ def import_invoices(
                 sign = 1 if direction == "attiva" else -1
                 if inv.doc_type in CREDIT_NOTE_TYPES:
                     sign = -sign
+                if inv.doc_type in SELF_INVOICE_TYPES:
+                    res.imported.append(invoice)
+                    continue
                 installments = inv.installments or [Installment(None, inv.total_cents, "")]
                 for n, inst in enumerate(installments, start=1):
                     estimated = inst.due_date is None

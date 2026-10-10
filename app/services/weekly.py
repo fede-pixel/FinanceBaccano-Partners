@@ -18,7 +18,7 @@ from app import config
 from app.models import Account, ChecklistItem, DocCategory
 from app.services import admin_docs as ad
 from app.services.bank_import import ImportProfile, UnreadableFile, import_transactions, new_batch_id, parse_rows, read_table
-from app.services.fatturapa import import_invoices
+from app.services.fatturapa import import_invoices, is_aruba_report
 from app.services.util import get_setting
 
 TABLE_EXT = (".csv", ".txt", ".xlsx", ".xlsm", ".xls")
@@ -177,7 +177,7 @@ def create_batch(session: Session, files: list[tuple[str, bytes]], today: date |
         token = f"{uuid.uuid4().hex}{suffix}"
         (config.IMPORTS_DIR / token).write_bytes(content)
         item = UploadItem(token=token, name=name, kind="documento", period=guess_period(name, period0))
-        if is_invoice(name, content):
+        if is_invoice(name, content) or is_aruba_report(name, content):
             item.kind = "fattura"
         elif name.lower().endswith(TABLE_EXT):
             try:

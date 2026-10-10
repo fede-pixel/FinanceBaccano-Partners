@@ -11,8 +11,8 @@
   <h2>Importa</h2>
   <form method="post" action="/fatture/import" enctype="multipart/form-data">
     <div class="dropzone field">
-      <div class="dz-label" data-empty="Trascina qui XML, P7M o ZIP">Trascina qui XML, P7M o ZIP</div>
-      <input type="file" name="files" multiple accept=".xml,.p7m,.zip" required style="margin-top:10px">
+      <div class="dz-label" data-empty="Trascina qui XML, P7M, ZIP o il report Excel">Trascina qui XML, P7M, ZIP o il report Excel</div>
+      <input type="file" name="files" multiple accept=".xml,.p7m,.zip,.xls,.xlsx,.csv" required style="margin-top:10px">
     </div>
     <div class="form-grid">
       <div class="field"><label>Tipo</label><select name="direction">
@@ -28,6 +28,7 @@
 <div class="card small">
   <h3>Come esportare da Aruba</h3>
   <p>Dal pannello di Aruba Fatturazione Elettronica seleziona le fatture (emesse o ricevute) e scarica i file XML (o un archivio ZIP). Puoi caricare qui anche i file firmati <code>.p7m</code>.</p>
+  <p>Va bene anche il <strong>report Excel</strong> di Aruba (<em>ReportFattureRicevute.xls</em> / <em>ReportFattureEmesse.xls</em>): una riga per fattura. Le fatture segnate "Pagata" o pagate con carta o contanti risultano già saldate; le autofatture per servizi esteri (TD17, TD18…) vengono archiviate senza uscita prevista, perché il pagamento è già nei movimenti della carta. Le fatture già importate come XML non vengono duplicate.</p>
   <p>Se la fattura non indica la data di scadenza, l'app la stima a 30 giorni dalla data fattura (valore modificabile nelle Impostazioni) e la segna come "stimata".</p>
   <p class="muted">In una fase successiva potremo collegare direttamente le API di Aruba, così le fatture arrivano da sole.</p>
 </div>
