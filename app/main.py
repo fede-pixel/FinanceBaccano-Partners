@@ -141,7 +141,7 @@ def create_app() -> FastAPI:
 
     # Dopo ogni modifica andata a buon fine (salvataggi, caricamenti, cancellazioni) si riallineano i dati collegati:
     # ricorrenze, categorie, giroconti, abbinamenti fatture/pagamenti, Excel per il commercialista.
-    NO_REFRESH = ("/login", "/logout", "/assistente", "/impostazioni/backup", "/apri-cartella", "/pacchetto")
+    NO_REFRESH = ("/login", "/logout", "/assistente/chiedi", "/impostazioni/backup", "/apri-cartella", "/pacchetto")
 
     @app.middleware("http")
     async def refresh_related(request: Request, call_next):

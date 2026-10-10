@@ -2,6 +2,8 @@
 
 Claude non vede il database in blocco: a ogni domanda decide quali dati gli servono e li chiede con degli
 strumenti in SOLA LETTURA (panoramica, fatture, spese, previsione, scadenze, e una query SQL di sola lettura).
+Può anche PROPORRE correzioni (strumenti proponi_*): non le esegue mai, compaiono nella chat con un pulsante "Esegui"
+e partono solo quando l'utente lo preme.
 Le impostazioni e le connessioni bancarie (che contengono chiavi e token) non sono mai leggibili.
 Richiede ANTHROPIC_API_KEY, come la lettura dei PDF; il modello si cambia con FBP_AI_MODEL."""
 import json
@@ -22,7 +24,7 @@ MAX_SQL_ROWS = 200
 BLOCKED_TABLES = {"settings", "bank_connections", "chat_conversations"}  # chiavi, token e la chat stessa
 
 SYSTEM = """Sei l'assistente finanziario e amministrativo di {company}, una piccola società italiana.
-Hai accesso in sola lettura ai dati della sua app di gestione: conti e carte con saldi e movimenti bancari,
+Leggi i dati della sua app di gestione: conti e carte con saldi e movimenti bancari,
 entrate e uscite previste, ricorrenze, fatture elettroniche emesse e ricevute (con il controllo incrociato dei
 pagamenti), categorie di spesa e lo scadenzario dei documenti da consegnare al commercialista.
 
@@ -39,6 +41,14 @@ Come lavori:
   pagano in ritardo, spese in crescita, documenti per il commercialista in scadenza.
 - Ricorda i limiti dei dati: le fatture anteriori ai movimenti importati non sono verificabili; le scadenze "stimate"
   sono calcolate dalla data fattura; i saldi dipendono dall'ultimo caricamento dei movimenti.
+- Correzioni: puoi PROPORRE modifiche con gli strumenti proponi_* (eliminare una fattura doppia, eliminare un movimento
+  errato, creare una regola di categoria, segnare giroconti, collegare un acconto a una fattura, creare una ricorrenza).
+  Non le esegui tu: ognuna compare all'utente con il pulsante "Esegui". Quindi non dire mai "ho corretto": di' "ti ho
+  preparato N modifiche, controllale e premi Esegui". Prima di proporre leggi gli id con esegui_sql. Proponi solo ciò che i
+  dati giustificano chiaramente; se serve un'informazione che solo l'utente ha (es. se un bonifico è un acconto, importo
+  dello stipendio), chiedila invece di indovinare, oppure proponi spiegando l'ipotesi. Non puoi caricare file: per
+  movimenti o XML mancanti spiega all'utente cosa caricare.
+- Se il messaggio dell'utente inizia con "[Modifiche eseguite…]", quelle modifiche sono già state applicate.
 - Non dai consulenza fiscale o legale vincolante: per adempimenti e interpretazioni rimanda al commercialista.
 - Formattazione semplice: paragrafi brevi, elenchi puntati, **grassetto** per le cifre chiave, tabelle markdown
   solo quando confronti più righe. Niente titoli lunghi.
@@ -179,6 +189,9 @@ TOOLS = [
 ]
 for _t in TOOLS:
     _t["strict"] = True
+from app.services import assistant_actions  # noqa: E402
+
+TOOLS += assistant_actions.tool_definitions()
 
 
 def schema_text() -> str:
@@ -406,8 +419,17 @@ def tool_investimenti(session: Session, mesi: int, scenario: str) -> dict:
     }
 
 
-def run_tool(session: Session, name: str, args: dict) -> str:
+def run_tool(session: Session, name: str, args: dict, proposals: list | None = None) -> str:
     try:
+        if name in assistant_actions.ACTIONS:
+            try:
+                prop = assistant_actions.propose(session, name, args)
+            except assistant_actions.ActionError as exc:
+                return json.dumps({"errore": str(exc)}, ensure_ascii=False)
+            if proposals is not None:
+                proposals.append(prop)
+            return json.dumps({"proposta_registrata": prop["summary"],
+                               "nota": "Non eseguita: l'utente la vedrà con il pulsante Esegui"}, ensure_ascii=False)
         if name == "panoramica":
             out = tool_panoramica(session)
         elif name == "fatture":
@@ -471,10 +493,16 @@ def ask(session: Session, conv: ChatConversation, question: str, client=None) ->
     messages = json.loads(conv.api_messages or "[]")
     display = json.loads(conv.display or "[]")
     # la data va nel messaggio (non nel prompt di sistema) così il prefisso resta in cache
-    messages.append({"role": "user", "content": f"[Oggi è {date.today():%d/%m/%Y}]\n{question}"})
+    # modifiche eseguite dall'utente dopo l'ultima risposta: l'assistente deve saperlo
+    done = [d for d in display if d.get("role") == "event" and not d.get("sent")]
+    for d in done:
+        d["sent"] = True
+    prefix = ("[Modifiche eseguite dall'utente nell'app: " + " | ".join(d["text"] for d in done) + "]\n") if done else ""
+    messages.append({"role": "user", "content": f"[Oggi è {date.today():%d/%m/%Y}]\n{prefix}{question}"})
     display.append({"role": "user", "text": question})
     system = SYSTEM.format(company=get_setting(session, "company_name") or "l'azienda", schema=schema_text())
     answer, tools_used, usage_in, usage_out = "", [], 0, 0
+    proposals: list[dict] = []
     for _ in range(MAX_TOOL_ROUNDS):
         try:
             response = client.beta.messages.create(
@@ -512,13 +540,13 @@ def ask(session: Session, conv: ChatConversation, question: str, client=None) ->
         results = []
         for tu in tool_uses:
             tools_used.append(tu.name)
-            results.append({"type": "tool_result", "tool_use_id": tu.id, "content": run_tool(session, tu.name, dict(tu.input))})
+            results.append({"type": "tool_result", "tool_use_id": tu.id, "content": run_tool(session, tu.name, dict(tu.input), proposals)})
         messages.append({"role": "user", "content": results})
     else:
         answer = "Non sono riuscito a completare l'analisi: prova a fare una domanda più specifica."
     usd = usage_in * 4 / 1_000_000 + usage_out * 20 / 1_000_000 if model_name().startswith("claude-opus-5-5") else None
     display.append({"role": "assistant", "text": answer or "(nessuna risposta)", "tools": sorted(set(tools_used)),
-                    "cost_eur": round(usd * 0.92, 3) if usd is not None else None})
+                    "cost_eur": round(usd * 0.92, 3) if usd is not None else None, "actions": proposals})
     conv.api_messages = json.dumps(messages, ensure_ascii=False, default=str)
     conv.display = json.dumps(display, ensure_ascii=False)
     if not conv.title:
@@ -528,3 +556,23 @@ def ask(session: Session, conv: ChatConversation, question: str, client=None) ->
 
 def conversations(session: Session) -> list[ChatConversation]:
     return list(session.scalars(select(ChatConversation).order_by(ChatConversation.updated_at.desc()).limit(30)))
+
+
+def execute_action(session: Session, conv: ChatConversation, action_id: str) -> str:
+    """Esegue una modifica proposta (dopo il clic dell'utente) e lo annota nella conversazione."""
+    display = json.loads(conv.display or "[]")
+    for entry in display:
+        for act in entry.get("actions") or []:
+            if act["id"] != action_id:
+                continue
+            if act["status"] != "proposta":
+                return act.get("result", "Già eseguita")
+            try:
+                result = assistant_actions.execute(session, act)
+                act["status"], act["result"] = "eseguita", result
+            except assistant_actions.ActionError as exc:
+                act["status"], act["result"] = "errore", f"Non eseguita: {exc}"
+            display.append({"role": "event", "text": act["result"]})
+            conv.display = json.dumps(display, ensure_ascii=False)
+            return act["result"]
+    raise assistant_actions.ActionError("proposta non trovata")

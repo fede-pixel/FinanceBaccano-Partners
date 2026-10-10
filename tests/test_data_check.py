@@ -41,3 +41,20 @@ def test_totals_like_aruba_and_checks(session):
 def test_page(client):
     page = client.get("/verifica")
     assert page.status_code == 200 and "Totali fatture" in page.text and "Verifica dati" in page.text
+
+
+def test_invalid_rows_are_skipped_and_reported(session):
+    from app.models import Account, Transaction
+    from app.services.bank_import import ParsedTx, import_transactions
+
+    acc = Account(name="Revolut", bank="Revolut")
+    session.add(acc)
+    session.flush()
+    res = import_transactions(session, acc, [ParsedTx(date(1900, 1, 14), 0, "", "", "", None, 1),
+                                             ParsedTx(date(2026, 9, 1), -1000, "Bar", "", "", None, 2)], "b")
+    assert res.inserted == 1
+    session.add(Transaction(account_id=acc.id, date=date(1900, 1, 14), amount_cents=0, description="", dedupe_key="old"))
+    session.commit()
+    checks = {c.title: c for c in data_check.run_checks(session, date(2026, 10, 10))}
+    assert checks["Movimenti non validi"].status == "err"
+    assert "1900" not in checks["Movimenti bancari caricati"].detail + " ".join(checks["Movimenti bancari caricati"].items)

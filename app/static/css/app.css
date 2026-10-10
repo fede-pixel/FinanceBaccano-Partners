@@ -207,3 +207,4 @@ a.kpi:hover { border-color: var(--axis); text-decoration: none; }
 .kpi .value.neg { color: var(--critical-ink); }
 .kpi-help { font-size: 12px; color: var(--muted); }
 .note-list { margin: 6px 0 0; padding-left: 18px; }
+.chat-actions { margin-top: 8px; padding: 10px 12px; }

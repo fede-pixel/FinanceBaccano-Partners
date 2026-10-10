@@ -628,6 +628,8 @@ def import_transactions(
     for t, k in zip(txs, keys):
         if k in existing:
             continue
+        if t.date.year < 2000 or (t.amount_cents == 0 and not (t.description or "").strip()):
+            continue  # righe vuote o lette male dal file (es. data 1900, importo 0): non sono movimenti
         existing.add(k)
         new_txs.append(
             Transaction(

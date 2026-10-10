@@ -31,12 +31,33 @@
     <div class="chat-thread">
       {% for m in messages %}
         <div class="chat-msg {{ m.role }}" {% if loop.last %}id="ultima"{% endif %}>
-          {% if m.role == 'user' %}
+          {% if m.role == 'event' %}
+            <div class="small muted">✓ {{ m.text }}</div>
+          {% elif m.role == 'user' %}
             <div class="chat-bubble">{{ m.text }}</div>
           {% else %}
             <div class="chat-bubble md">{{ m.text|md }}</div>
+            {% if m.actions %}
+            {% set pending = m.actions|selectattr('status', 'equalto', 'proposta')|list %}
+            <div class="card chat-actions small">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+                <strong>Modifiche proposte ({{ m.actions|length }})</strong>
+                {% if pending|length > 1 %}<form method="post" action="/assistente/{{ conv.id }}/azione" data-confirm="Eseguire tutte le {{ pending|length }} modifiche proposte?">
+                  <input type="hidden" name="action_ids" value="{{ pending|map(attribute='id')|join(',') }}"><button class="small">Esegui tutte</button></form>{% endif %}
+              </div>
+              <p class="muted" style="margin:4px 0">Niente viene modificato finché non premi Esegui. Controlla ogni riga.</p>
+              {% for a in m.actions %}
+              <div class="doc-row" style="grid-template-columns: 1fr auto">
+                <div>{{ a.summary }}{% if a.result and a.status != 'proposta' %}<div class="{{ 'pos' if a.status == 'eseguita' else 'neg' }}">{{ a.result }}</div>{% endif %}</div>
+                <div>{% if a.status == 'proposta' %}<form method="post" action="/assistente/{{ conv.id }}/azione">
+                  <input type="hidden" name="action_ids" value="{{ a.id }}"><button class="small">Esegui</button></form>
+                  {% elif a.status == 'eseguita' %}<span class="badge good">Eseguita</span>{% else %}<span class="badge crit">Errore</span>{% endif %}</div>
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
             <div class="small muted chat-meta">
-              {% if m.tools %}Dati consultati: {{ m.tools|join(', ') }}{% endif %}
+              {% if m.tools %}Dati consultati: {% for t in m.tools if not t.startswith('proponi_') %}{{ t }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}
               {% if m.cost_eur is not none %} · costo stimato {{ '%.3f'|format(m.cost_eur)|replace('.', ',') }} €{% endif %}
             </div>
           {% endif %}
@@ -59,7 +80,7 @@
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit()}" {{ 'disabled' if not ai_enabled }}></textarea>
       <div class="toolbar">
         <button {{ 'disabled' if not ai_enabled }}>Chiedi</button>
-        <span class="small muted">La risposta può richiedere fino a un minuto. Le domande e i dati letti dall'assistente vengono elaborati dal servizio di Anthropic (Claude); i dati restano in sola lettura, l'assistente non modifica nulla.</span>
+        <span class="small muted">La risposta può richiedere fino a un minuto. Le domande e i dati letti dall'assistente vengono elaborati dal servizio di Anthropic (Claude); l'assistente legge i dati e può solo proporre modifiche: le esegui tu con il pulsante "Esegui".</span>
       </div>
     </form>
     {% if conv %}

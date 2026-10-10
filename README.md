@@ -159,6 +159,16 @@ La pagina **Assistente AI** è una chat con Claude che conosce i dati dell'app: 
 - **Costo:** a consumo; sotto ogni risposta c'è il costo stimato (di solito pochi centesimi).
 - **Privacy:** le domande e i dati letti per rispondere vengono elaborati dal servizio di Anthropic.
 
+**Correzioni proposte dall'assistente.** L'assistente può preparare delle modifiche, ma non le esegue mai da solo. Ognuna compare nella chat con il dettaglio e un pulsante **Esegui** (oppure **Esegui tutte**) e parte solo quando lo premi. Può proporre di:
+- eliminare una fattura caricata due volte (solo se esiste davvero il doppione e non è la copia collegata alla banca);
+- eliminare un movimento errato;
+- creare una regola di categoria (anche per IBAN);
+- segnare giroconti;
+- collegare un acconto a una fattura;
+- creare una ricorrenza.
+
+Le modifiche eseguite vengono comunicate all'assistente alla domanda successiva.
+
 Le conversazioni restano salvate e si possono riprendere o eliminare.
 
 ## Analisi spese

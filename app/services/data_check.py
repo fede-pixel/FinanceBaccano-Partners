@@ -119,7 +119,7 @@ def run_checks(session: Session, today: date | None = None) -> list[Check]:
     for name, first, last, n in cov.accounts:
         gap_months = []
         months = {(d.year, d.month) for (d,) in session.execute(
-            select(Transaction.date).join(Account).where(Account.name == name))}
+            select(Transaction.date).join(Account).where(Account.name == name, Transaction.date >= date(2000, 1, 1)))}
         m = date(first.year, first.month, 1)
         while m <= last:
             if (m.year, m.month) not in months:
@@ -143,6 +143,15 @@ def run_checks(session: Session, today: date | None = None) -> list[Check]:
                         ("Tutti i conti hanno movimenti dal " + cov.start.strftime("%d/%m/%Y") + "." if cov.start else
                          "Nessun movimento caricato.") + (" Controlla i buchi segnalati." if status == "warn" else ""),
                         lines, "/carica"))
+
+    # 5b. righe di movimenti non valide
+    bad = list(session.scalars(select(Transaction).where(
+        (Transaction.date < date(2000, 1, 1)) | ((Transaction.amount_cents == 0) & (Transaction.description == "")))))
+    if bad:
+        checks.append(Check("Movimenti non validi", "err",
+                            f"{len(bad)} righe con data assurda o importo zero senza descrizione: sono errori di lettura del file, "
+                            "cancellale (oppure chiedi all'Assistente di proporne l'eliminazione).",
+                            [f"id {t.id} · {t.account.name} · {t.date:%d/%m/%Y} · {fmt_eur(t.amount_cents)}" for t in bad[:8]], "/movimenti"))
 
     # 6. fatture emesse vecchie ancora aperte
     statuses = invoice_match.invoice_statuses(session)

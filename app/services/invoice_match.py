@@ -584,7 +584,7 @@ def coverage(session: Session) -> Coverage:
     rows = session.execute(
         select(Account.name, func.min(Transaction.date), func.max(Transaction.date), func.count(Transaction.id))
         .join(Transaction, Transaction.account_id == Account.id)
-        .where(Account.active)
+        .where(Account.active, Transaction.date >= date(2000, 1, 1))  # escluse le righe con date assurde (es. 1900)
         .group_by(Account.id)
         .order_by(func.min(Transaction.date))
     ).all()

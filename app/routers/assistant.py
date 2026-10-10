@@ -60,3 +60,24 @@ def delete(conv_id: int, session: Session = Depends(get_session)):
     session.delete(conv)
     session.commit()
     return redirect("/assistente", msg="Conversazione eliminata")
+
+
+@router.post("/assistente/{conv_id}/azione")
+def run_actions(conv_id: int, action_ids: str = Form(...), session: Session = Depends(get_session)):
+    """Esegue le modifiche proposte dall'assistente che l'utente ha confermato."""
+    from app.services.assistant_actions import ActionError
+
+    conv = session.get(ChatConversation, conv_id)
+    if conv is None:
+        raise HTTPException(404, "Non trovata")
+    results, errors = [], []
+    for aid in [a for a in action_ids.split(",") if a]:
+        try:
+            out = assistant.execute_action(session, conv, aid)
+            session.flush()
+            (errors if out.startswith("Non eseguita") else results).append(out)
+        except ActionError as exc:
+            errors.append(str(exc))
+    session.commit()
+    return redirect(f"/assistente?c={conv_id}#ultima", msg=f"Eseguite {len(results)} modifiche" if results else "",
+                    err=" · ".join(errors[:3]))
