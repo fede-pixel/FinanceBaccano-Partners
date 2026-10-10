@@ -6,6 +6,7 @@ from fastapi import Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from app import config
 from app.config import BASE_DIR
 from app.services.util import MONTHS_IT, WEEKDAYS_IT, fmt_date, fmt_eur, month_label
 
@@ -38,6 +39,8 @@ NAV = [
     ("", [("/impostazioni", "Impostazioni"), ("/banche", "Open Banking (opzionale)")]),
 ]
 env.globals["NAV"] = NAV
+env.globals["ONLINE"] = config.ONLINE
+env.globals["auth_enabled"] = lambda: bool(config.APP_PASSWORD)
 
 
 def render(request: Request, name: str, **ctx):

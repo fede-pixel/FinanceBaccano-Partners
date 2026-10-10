@@ -23,6 +23,7 @@
       </div>
       {% endfor %}
     </nav>
+    {% if auth_enabled() %}<form method="post" action="/logout" style="padding:0 10px"><button class="small ghost">Esci</button></form>{% endif %}
   </aside>
   <main class="main">
     {% if msg %}<div class="alert ok">{{ msg }}</div>{% endif %}

@@ -48,6 +48,32 @@ async def settings_save(request: Request, session: Session = Depends(get_session
     return redirect("/impostazioni", msg="Impostazioni salvate")
 
 
+@router.get("/impostazioni/backup.zip")
+def backup_download(session: Session = Depends(get_session)):
+    """Copia completa da conservare altrove: database coerente + cartella documenti."""
+    import tempfile
+    import zipfile
+    from datetime import datetime
+
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
+
+    db_copy = run_backup(force=True)
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    tmp.close()
+    docs = docs_root(session)
+    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as zf:
+        if db_copy:
+            zf.write(db_copy, "finance.db")
+        for f in docs.rglob("*"):
+            if f.is_file():
+                zf.write(f, f"documenti/{f.relative_to(docs).as_posix()}")
+    from pathlib import Path
+
+    name = f"backup-finance-{datetime.now():%Y-%m-%d}.zip"
+    return FileResponse(tmp.name, filename=name, background=BackgroundTask(Path(tmp.name).unlink, missing_ok=True))
+
+
 @router.post("/impostazioni/backup")
 def backup_now():
     path = run_backup(force=True)

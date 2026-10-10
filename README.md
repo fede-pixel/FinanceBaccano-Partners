@@ -5,7 +5,18 @@ App **locale** (gira sul tuo computer, si usa dal browser) per:
 - **Finance**: saldi di conti e carte, entrate e uscite previste giorno per giorno, forecast della liquidità con soglia minima, riconciliazione tra movimenti reali e voci previste.
 - **Administration**: scadenzario dei documenti da consegnare al commercialista (mensili entro il 6, estratti conto trimestrali dal 15), archivio ordinato dei file, export automatici dai movimenti, pacchetto ZIP + email per l'invio.
 
-## Avvio
+## Online su Render (consigliato)
+
+L'app è pronta per essere pubblicata su [Render](https://render.com) con il file `render.yaml`. Ottieni un indirizzo `https://…onrender.com`, protetto da password, apribile da PC e telefono. Ogni modifica caricata su GitHub viene pubblicata da sola.
+
+1. Crea un account su render.com con "Sign in with GitHub" e autorizza l'accesso al repository `FinanceBaccano-Partners`.
+2. **New → Blueprint** → scegli il repository → Render legge `render.yaml`.
+3. Quando lo chiede, inserisci **APP_PASSWORD**: la password per entrare nell'app. Usane una lunga.
+4. Conferma la creazione (piano Starter con disco da 1 GB, circa 7 $/mese). Dopo qualche minuto l'app è attiva all'indirizzo mostrato da Render.
+
+I dati (database e documenti) stanno sul disco persistente `/var/data`, con un backup automatico al giorno. Da *Impostazioni → Scarica backup completo* puoi scaricarne una copia quando vuoi.
+
+## Avvio in locale (alternativa)
 
 Requisito: **Python 3.11+** ([python.org](https://www.python.org/downloads/); su Windows spunta "Add Python to PATH").
 

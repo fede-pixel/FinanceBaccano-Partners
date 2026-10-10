@@ -18,6 +18,12 @@ HOST = os.environ.get("FBP_HOST", "127.0.0.1")
 PORT = int(os.environ.get("FBP_PORT", "8765"))
 BACKUPS_TO_KEEP = 30
 
+# Modalità online (es. su Render): niente cartelle locali da aprire, accesso con password obbligatorio
+ONLINE = os.environ.get("FBP_ONLINE", "") == "1"
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+SESSION_SECRET = os.environ.get("SESSION_SECRET", "")
+PUBLIC_URL = (os.environ.get("PUBLIC_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "").rstrip("/")
+
 
 def ensure_dirs() -> None:
     for d in (DATA_DIR, BACKUP_DIR, DEFAULT_DOCS_DIR, DEFAULT_PACKAGES_DIR, IMPORTS_DIR):

@@ -23,7 +23,8 @@ _aspsp_cache: dict[tuple[str, str], tuple[float, list[dict]]] = {}
 
 
 def default_redirect_url() -> str:
-    return f"http://127.0.0.1:{config.PORT}/banche/callback"
+    base = config.PUBLIC_URL or f"http://127.0.0.1:{config.PORT}"
+    return f"{base}/banche/callback"
 
 
 def _404():

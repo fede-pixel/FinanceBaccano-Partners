@@ -184,6 +184,8 @@ def package_sent(mese: str = Form(...), session: Session = Depends(get_session))
 @router.post("/apri-cartella")
 def open_folder(path: str = Form(...), back: str = Form("/"), session: Session = Depends(get_session)):
     """Apre la cartella nel file manager del computer (l'app gira in locale)."""
+    if config.ONLINE:
+        return redirect(back if back.startswith("/") else "/", err="Online le cartelle non si aprono: scarica i file")
     p = Path(path).resolve()
     if p.is_file():
         p = p.parent

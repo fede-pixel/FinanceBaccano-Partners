@@ -1,0 +1,28 @@
+# Configurazione per Render (https://render.com): crea il servizio web e il disco persistente.
+# Uso: Render → New → Blueprint → scegli questo repository. Alla creazione chiede APP_PASSWORD.
+services:
+  - type: web
+    name: finance-baccano
+    runtime: python
+    plan: starter            # serve un piano a pagamento per il disco persistente
+    region: frankfurt        # server in UE
+    branch: claude/finance-admin-software-e9mlfi
+    autoDeploy: true         # ogni modifica caricata su GitHub viene pubblicata da sola
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: FBP_ONLINE
+        value: "1"
+      - key: FBP_DATA_DIR
+        value: /var/data
+      - key: APP_PASSWORD
+        sync: false          # la scegli tu al momento della creazione
+      - key: SESSION_SECRET
+        generateValue: true
+    disk:
+      name: dati
+      mountPath: /var/data
+      sizeGB: 1

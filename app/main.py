@@ -4,10 +4,10 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import config
+from app import auth, config
 from app.backup import run_backup
 from app.db import SessionLocal, init_engine
 from app.routers import accounts, admin, banks, dashboard, planning, settings, upload
@@ -43,6 +43,10 @@ async def bank_sync_loop() -> None:
 
     await asyncio.sleep(10)
     while True:
+        try:
+            await asyncio.to_thread(run_backup)  # backup giornaliero anche se l'app resta accesa per settimane
+        except Exception:
+            log.exception("Backup fallito")
         with SessionLocal() as session:
             hours = int(get_setting(session, "eb_sync_hours") or 0)
         if hours:
@@ -69,6 +73,31 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Finance & Admin – Baccano Partners", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")
 
+    @app.get("/healthz", include_in_schema=False)
+    def healthz():
+        return {"ok": True}
+
+    @app.middleware("http")
+    async def require_login(request: Request, call_next):
+        if config.ONLINE and not auth.enabled() and request.url.path != "/healthz":
+            return PlainTextResponse(
+                "App online senza password: imposta la variabile APP_PASSWORD nel pannello di hosting.", status_code=503
+            )
+        if auth.enabled() and not auth.is_open_path(request.url.path) and not auth.valid_token(request.cookies.get(auth.COOKIE)):
+            if request.method == "GET":
+                from urllib.parse import quote
+
+                target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+                return RedirectResponse(f"/login?next={quote(target)}", status_code=303)
+            return PlainTextResponse("Sessione scaduta: accedi di nuovo", status_code=401)
+        response = await call_next(request)
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        if request.url.scheme == "https":
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+        return response
+
     @app.middleware("http")
     async def same_origin_only(request: Request, call_next):
         # L'app gira sul tuo computer: blocco i POST provenienti da altri siti aperti nel browser.
@@ -78,7 +107,7 @@ def create_app() -> FastAPI:
                 return PlainTextResponse("Richiesta bloccata: origine non locale", status_code=403)
         return await call_next(request)
 
-    for r in (dashboard, upload, accounts, banks, planning, admin, settings):
+    for r in (auth, dashboard, upload, accounts, banks, planning, admin, settings):
         app.include_router(r.router)
     return app
 

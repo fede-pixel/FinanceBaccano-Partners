@@ -18,10 +18,16 @@
     <div class="field"><label class="check"><input type="checkbox" name="include_overdue_in_forecast" value="1" {{ 'checked' if v.include_overdue_in_forecast == '1' }}> Conta nel saldo previsto di oggi le voci scadute non ancora abbinate</label></div>
   </div>
   <div class="card">
-    <h2>Cartelle</h2>
+    <h2>{{ 'Backup' if ONLINE else 'Cartelle' }}</h2>
+    {% if ONLINE %}
+    <p class="small">I dati sono sul disco del server, con un backup automatico al giorno (ultimi 30). Ogni tanto scarica una copia completa (database + documenti) e tienila sul tuo PC o su Drive.</p>
+    <a class="btn" href="/impostazioni/backup.zip">Scarica backup completo</a>
+    {% else %}
     <div class="field"><label>Cartella documenti (vuoto = predefinita)</label><input name="docs_dir" value="{{ v.docs_dir }}" placeholder="{{ docs_dir }}" style="width:100%"></div>
     <div class="field"><label>Cartella pacchetti ZIP (es. una cartella di Google Drive sincronizzata)</label><input name="packages_dir" value="{{ v.packages_dir }}" placeholder="{{ packages_dir }}" style="width:100%"></div>
     <p class="small muted">Database e backup: <code>{{ data_dir }}</code> · backup giornalieri in <code>{{ backup_dir }}</code> (ultimi 30).</p>
+    <a class="btn btn-ghost btn-small" href="/impostazioni/backup.zip">Scarica backup completo</a>
+    {% endif %}
   </div>
   <div class="card">
     <h2>Scadenzario documenti</h2>

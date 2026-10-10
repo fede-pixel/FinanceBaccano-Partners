@@ -34,9 +34,10 @@
     <form method="post" action="/pacchetto/crea"><input type="hidden" name="mese" value="{{ mese }}"><button>{{ 'Ricrea' if zip_exists else 'Crea' }} pacchetto</button></form>
     {% if zip_exists %}
       <p class="small" style="margin-top:8px"><a href="/pacchetto/scarica?mese={{ mese }}">Scarica lo ZIP</a></p>
-      <form method="post" action="/apri-cartella"><input type="hidden" name="path" value="{{ zip_path }}"><input type="hidden" name="back" value="/pacchetto?mese={{ mese }}"><button class="small ghost">Apri cartella</button></form>
+      {% if not ONLINE %}<form method="post" action="/apri-cartella"><input type="hidden" name="path" value="{{ zip_path }}"><input type="hidden" name="back" value="/pacchetto?mese={{ mese }}"><button class="small ghost">Apri cartella</button></form>{% endif %}
     {% endif %}
-    <p class="small muted" style="margin-top:8px">Salvato in <code>{{ packages_dir }}</code>. Se in Impostazioni imposti come cartella pacchetti una cartella di Google Drive sincronizzata, lo ZIP arriva su Drive da solo.</p>
+    {% if ONLINE %}<p class="small muted" style="margin-top:8px">Scarica lo ZIP e caricalo nella cartella Drive condivisa con il commercialista (o allegalo all'email).</p>
+    {% else %}<p class="small muted" style="margin-top:8px">Salvato in <code>{{ packages_dir }}</code>. Se in Impostazioni imposti come cartella pacchetti una cartella di Google Drive sincronizzata, lo ZIP arriva su Drive da solo.</p>{% endif %}
   </div>
   <div class="card">
     <h3>2 · Invia l'email</h3>

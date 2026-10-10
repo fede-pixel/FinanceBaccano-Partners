@@ -71,11 +71,13 @@
     </tbody>
   </table>
   {% else %}<div class="empty">Nessun documento caricato.</div>{% endif %}
+{% if not ONLINE %}
   <form method="post" action="/apri-cartella" style="margin-top:12px">
     <input type="hidden" name="path" value="{{ folder }}"><input type="hidden" name="back" value="/documenti/voce/{{ item.id }}">
     <span class="small muted">Cartella: <code>{{ folder }}</code></span>
     {% if item.documents %}<button class="small ghost">Apri cartella</button>{% endif %}
   </form>
+  {% endif %}
 </div>
 </div>
 {% endblock %}
