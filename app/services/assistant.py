@@ -32,6 +32,8 @@ Come lavori:
 - Per le domande generiche parti da `panoramica`. Per tutto il resto usa lo strumento più specifico;
   `esegui_sql` quando serve una risposta che gli altri strumenti non danno.
 - Importi in euro con il formato italiano (1.234,56 €). Date in formato gg/mm/aaaa.
+- Per redditività, EBITDA, margini, andamento usa `kpi_economici`; per "quanto posso investire / assumere / spendere
+  in marketing o mezzi" usa `capacita_investimento` (confronta gli scenari se utile).
 - Quando dai consigli (liquidità, incassi da sollecitare, spese da ridurre, scadenze), basali sui dati che hai letto
   e spiega il perché in una riga. Segnala rischi concreti: saldo previsto sotto la soglia, fatture scadute, clienti che
   pagano in ritardo, spese in crescita, documenti per il commercialista in scadenza.
@@ -113,6 +115,32 @@ TOOLS = [
             "type": "object",
             "properties": {"entro_giorni": {"type": "integer", "description": "Scadenze entro N giorni (1-180)"}},
             "required": ["entro_giorni"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "kpi_economici",
+        "description": "KPI economici e finanziari mese per mese: ricavi e costi da fatture (netto IVA), personale, EBITDA "
+                       "stimato e margine, entrate/uscite di cassa, liquidità a fine mese, autonomia di cassa, crediti e debiti "
+                       "aperti, DSO/DPO, principali clienti.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"mesi": {"type": "integer", "description": "Numero di mesi (6, 12 o 24)"}},
+            "required": ["mesi"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "capacita_investimento",
+        "description": "Quanto si può investire nei prossimi mesi senza scendere sotto la riserva di sicurezza, ripartito tra "
+                       "marketing, HR/assunzioni, mezzi/macchinari e altro, con il dettaglio della proiezione di cassa.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mesi": {"type": "integer", "description": "Orizzonte: 3, 6 o 12"},
+                "scenario": {"type": "string", "enum": ["prudente", "base", "ottimista"]},
+            },
+            "required": ["mesi", "scenario"],
             "additionalProperties": False,
         },
     },
@@ -289,6 +317,46 @@ def tool_sql(session: Session, query: str) -> dict:
     return {"colonne": cols, "righe": [list(r) for r in rows[:MAX_SQL_ROWS]], "troncato": len(rows) > MAX_SQL_ROWS}
 
 
+def tool_kpi(session: Session, mesi: int) -> dict:
+    from app.services import kpi
+
+    rep = kpi.build(session, mesi if mesi in (6, 12, 24) else 12)
+    pc = lambda v: None if v is None else f"{v * 100:.1f}%"  # noqa: E731
+    return {
+        "nota": "EBITDA stimato = ricavi fatturati − costi fatturati − stipendi pagati; misura gestionale, non di bilancio",
+        "anno_in_corso": {"ricavi": _eur(rep.ytd_revenue), "ebitda": _eur(rep.ytd_ebitda), "margine": pc(rep.ytd_margin),
+                          "flusso_di_cassa": _eur(rep.ytd_cash)},
+        "crescita_ricavi_3m": pc(rep.revenue_growth), "liquidita_oggi": _eur(rep.balance_today),
+        "autonomia_mesi": rep.runway_months and round(rep.runway_months, 1),
+        "crediti_aperti": _eur(rep.receivables), "crediti_scaduti": _eur(rep.receivables_overdue),
+        "debiti_aperti": _eur(rep.payables), "debiti_scaduti": _eur(rep.payables_overdue),
+        "dso_giorni": rep.dso and round(rep.dso), "dpo_giorni": rep.dpo and round(rep.dpo),
+        "fatture_senza_iva_nota": rep.invoices_without_vat,
+        "principali_clienti": [f"{n}: {fmt_eur(v)} ({s * 100:.0f}%)" for n, v, s in rep.top_clients],
+        "mesi": [{"mese": m.key, "ricavi": _eur(m.revenue), "costi_fornitori": _eur(m.external_costs),
+                  "personale": _eur(m.personnel), "ebitda": _eur(m.ebitda), "margine": pc(m.margin),
+                  "entrate_cassa": _eur(m.cash_in), "uscite_cassa": _eur(m.cash_out), "liquidita_fine_mese": _eur(m.end_balance)}
+                 for m in rep.months],
+    }
+
+
+def tool_investimenti(session: Session, mesi: int, scenario: str) -> dict:
+    from app.services import investment
+
+    p = investment.build(session, mesi if mesi in (3, 6, 12) else 6, scenario)
+    return {
+        "investibile_nell_orizzonte_graduale": _eur(p.investable), "di_cui_spendibile_subito": _eur(p.investable_now),
+        "liquidita_oggi": _eur(p.balance_today), "punto_minimo": _eur(p.min_balance), "data_minimo": p.min_date.isoformat(),
+        "riserva_sicurezza": _eur(p.reserve), "incassi_medi_mensili_storici": _eur(p.hist_in),
+        "uscite_medie_mensili": _eur(p.avg_monthly_out), "margine_cassa_ricorrente_mensile": _eur(p.recurring_surplus),
+        "ripartizione": [{"area": a.label, "quota": f"{a.share * 100:.0f}%", "budget": _eur(a.amount), "nota": a.note}
+                         for a in p.allocations],
+        "assunzioni": {"costo_mensile_sostenibile": _eur(p.hire_monthly_budget), "persone_circa": round(p.hires, 1)},
+        "avvisi": p.warnings,
+        "mesi": [{"mese": k, "entrate": _eur(i), "uscite": _eur(o)} for k, i, o in p.months],
+    }
+
+
 def run_tool(session: Session, name: str, args: dict) -> str:
     try:
         if name == "panoramica":
@@ -301,6 +369,10 @@ def run_tool(session: Session, name: str, args: dict) -> str:
             out = tool_previsione(session, **args)
         elif name == "scadenze_documenti":
             out = tool_scadenze(session, **args)
+        elif name == "kpi_economici":
+            out = tool_kpi(session, **args)
+        elif name == "capacita_investimento":
+            out = tool_investimenti(session, **args)
         elif name == "esegui_sql":
             out = tool_sql(session, **args)
         else:

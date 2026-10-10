@@ -47,6 +47,7 @@ class ParsedInvoice:
     customer_vat: str
     total_cents: int
     installments: list[Installment] = field(default_factory=list)
+    vat_cents: int | None = None
 
 
 def _strip_ns(root: ET.Element) -> ET.Element:
@@ -121,6 +122,8 @@ def parse_invoice_xml(xml_bytes: bytes) -> list[ParsedInvoice]:
             total = 0
             for r in body.findall("DatiBeniServizi/DatiRiepilogo"):
                 total += (parse_amount(_text(r, "ImponibileImporto"), ".") or 0) + (parse_amount(_text(r, "Imposta"), ".") or 0)
+        riepilogo = body.findall("DatiBeniServizi/DatiRiepilogo")
+        vat = sum(parse_amount(_text(r, "Imposta"), ".") or 0 for r in riepilogo) if riepilogo else None
         installments = []
         for dp in body.findall("DatiPagamento"):
             for det in dp.findall("DettaglioPagamento"):
@@ -146,6 +149,7 @@ def parse_invoice_xml(xml_bytes: bytes) -> list[ParsedInvoice]:
                 customer_vat=_vat(cus),
                 total_cents=total,
                 installments=installments,
+                vat_cents=vat,
             )
         )
     return out
@@ -191,6 +195,7 @@ class ReportRow:
     vat: str
     total_cents: int
     to_pay_cents: int
+    vat_cents: int | None
     method_code: str
     paid: bool
     paid_date: date | None
@@ -258,6 +263,7 @@ def parse_aruba_report(filename: str, content: bytes) -> tuple[str, list[ReportR
             counterparty=row[party].strip() if party is not None and party < len(row) else "",
             vat=get(row, "p.iva") or get(row, "codice fiscale"),
             total_cents=total, to_pay_cents=net if net is not None else total,
+            vat_cents=parse_amount(get(row, "totale iva"), ".") if "totale iva" in cols else None,
             method_code=method.group(0) if method else "",
             paid=get(row, "pagamenti").lower() == "pagata",
             paid_date=parse_date_value(get(row, "data pagamento")[:10], "auto") if get(row, "data pagamento") else None,
@@ -279,14 +285,18 @@ def _import_report(session, res, name, content, forced_direction, default_paymen
     res.errors.extend(f"{name}: {e}" for e in errors)
     for r in rows:
         key = hashlib.sha256(f"sdi:{r.sdi_id or (r.number, r.date, r.vat)}".encode()).hexdigest()
-        if session.scalar(select(Invoice.id).where(Invoice.file_hash == key)) or _existing(
+        dup = session.scalar(select(Invoice).where(Invoice.file_hash == key)) or _existing(
             session, direction, r.number, r.date, r.vat, r.doc_type
-        ):
+        )
+        if dup is not None:
+            if dup.vat_cents is None and r.vat_cents is not None:
+                dup.vat_cents = r.vat_cents  # ricaricando il report si completano le fatture importate senza IVA
             res.duplicates.append(r.number)
             continue
         invoice = Invoice(
             direction=direction, doc_type=r.doc_type, number=r.number, date=r.date, counterparty=r.counterparty,
-            counterparty_vat=r.vat, total_cents=r.total_cents, file_name=r.file_name or name, file_hash=key,
+            counterparty_vat=r.vat, total_cents=r.total_cents, vat_cents=r.vat_cents, file_name=r.file_name or name,
+            file_hash=key,
         )
         session.add(invoice)
         session.flush()
@@ -381,6 +391,8 @@ def import_invoices(
                     session.delete(old)  # riga del report Excel senza importi: l'XML la sostituisce
                     session.flush()
                 elif old is not None:
+                    if old.vat_cents is None and inv.vat_cents is not None:
+                        old.vat_cents = inv.vat_cents
                     res.duplicates.append(name)
                     continue
                 invoice = Invoice(
@@ -391,6 +403,7 @@ def import_invoices(
                     counterparty=counterparty,
                     counterparty_vat=cp_vat,
                     total_cents=inv.total_cents,
+                    vat_cents=inv.vat_cents,
                     file_name=name,
                     file_hash=file_hash if i == 0 else f"{file_hash[:56]}-{i}",
                 )

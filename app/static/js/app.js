@@ -171,6 +171,58 @@
     });
   }
 
+  // Grafico generico configurato da JSON: {kind, labels, labelFormat, series:[{label, values, color, dash}], valueFormat, reference}
+  const monthFmt = new Intl.DateTimeFormat("it-IT", { month: "short", year: "2-digit" });
+  const pct = (v) => (v === null || v === undefined ? "—" : (v * 100).toFixed(1).replace(".", ",") + "%");
+  function genericChart(canvas, cfg) {
+    const fmtValue = cfg.valueFormat === "pct" ? pct : (v) => eur.format(v);
+    const fmtTick = cfg.valueFormat === "pct" ? (v) => Math.round(v * 100) + "%" : (v) => eurShort.format(v) + " €";
+    const fmtLabel = (l) => {
+      if (cfg.labelFormat === "month") return monthFmt.format(new Date(l + "-15T12:00:00"));
+      if (cfg.labelFormat === "day") { const d = new Date(l + "T12:00:00"); return d.getDate() + "/" + (d.getMonth() + 1); }
+      return l;
+    };
+    const opts = baseOptions();
+    opts.plugins.tooltip.callbacks = {
+      title: (items) => (cfg.labelFormat === "day" ? dayFmt.format(new Date(items[0].label + "T12:00:00")) : fmtLabel(items[0].label)),
+      label: (ctx) => (ctx.raw === null ? null : ` ${ctx.dataset.label}: ${fmtValue(ctx.raw)}`),
+    };
+    opts.scales.x.ticks.callback = function (v) { return fmtLabel(this.getLabelForValue(v)); };
+    opts.scales.y.ticks.callback = fmtTick;
+    if (cfg.horizontal) {
+      opts.indexAxis = "y";
+      opts.interaction = { mode: "nearest", axis: "y", intersect: false };
+      opts.scales = {
+        x: { grid: { color: css("--grid") }, border: { display: false }, ticks: { color: css("--muted"), callback: fmtTick } },
+        y: { grid: { display: false }, border: { color: css("--axis") }, ticks: { color: css("--ink-2"), autoSkip: false } },
+      };
+    }
+    const datasets = cfg.series.map((s) => {
+      const color = css(s.color || "--series-actual");
+      return cfg.kind === "line"
+        ? { label: s.label, data: s.values, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: cfg.labels.length > 40 ? 0 : 3,
+            pointHoverRadius: 5, tension: 0.15, borderDash: s.dash ? [6, 4] : [], spanGaps: true }
+        : { label: s.label, data: s.values, backgroundColor: color, borderRadius: 4, maxBarThickness: cfg.horizontal ? 22 : 26,
+            borderColor: css("--surface"), borderWidth: { top: 0, bottom: 0, left: 1, right: 1 } };
+    });
+    if (cfg.reference) {
+      datasets.push({ type: "line", label: cfg.reference.label, data: cfg.labels.map(() => cfg.reference.value),
+        borderColor: css(cfg.reference.color || "--critical"), borderWidth: 1, borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0 });
+    }
+    return new Chart(canvas, { type: cfg.kind === "line" ? "line" : "bar", data: { labels: cfg.labels, datasets }, options: opts });
+  }
+
+  function initGenericCharts() {
+    document.querySelectorAll("[data-chart]").forEach((el) => {
+      const cfg = JSON.parse(document.getElementById(el.dataset.chart).textContent);
+      let chart = genericChart(el.querySelector("canvas"), cfg);
+      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+        chart.destroy();
+        chart = genericChart(el.querySelector("canvas"), cfg);
+      });
+    });
+  }
+
   function initDropzones() {
     document.querySelectorAll(".dropzone").forEach((zone) => {
       const input = zone.querySelector("input[type=file]");
@@ -198,7 +250,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    if (window.Chart) initCharts();
+    if (window.Chart) { initCharts(); initGenericCharts(); }
     initDropzones();
     initConfirms();
   });

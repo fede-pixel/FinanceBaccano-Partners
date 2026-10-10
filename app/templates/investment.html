@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_macros.html" import chart %}
+{% block title %}Capacità di investimento{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Capacità di investimento</h1>
+  <div class="muted">Quanto puoi investire nei prossimi mesi senza scendere sotto la riserva di sicurezza, e come ripartirlo tra le aree.</div></div>
+  <form method="get" class="toolbar">
+    <select name="mesi" onchange="this.form.submit()" aria-label="Orizzonte">
+      {% for v in (3, 6, 12) %}<option value="{{ v }}" {{ 'selected' if v == mesi }}>Prossimi {{ v }} mesi</option>{% endfor %}
+    </select>
+    <select name="scenario" onchange="this.form.submit()" aria-label="Scenario">
+      {% for k, s in scenarios.items() %}<option value="{{ k }}" {{ 'selected' if k == scenario }}>Scenario {{ s.label|lower }}</option>{% endfor %}
+    </select>
+  </form>
+</div>
+
+{% for w in plan.warnings %}<div class="alert warn small">{{ w }}</div>{% endfor %}
+
+<div class="kpis">
+  <div class="kpi"><div class="label">Puoi investire nei prossimi {{ mesi }} mesi</div><div class="value">{{ plan.investable|eur }}</div>
+    <div class="sub">spesi in modo graduale (circa {{ (plan.investable // mesi)|eur }} al mese) · di cui <strong>{{ plan.investable_now|eur }}</strong> spendibili subito in una volta</div></div>
+  <div class="kpi"><div class="label">Liquidità oggi</div><div class="value">{{ plan.balance_today|eur }}</div>
+    <div class="sub">conti inclusi nel forecast</div></div>
+  <div class="kpi"><div class="label">Punto più basso previsto</div><div class="value {{ 'neg' if plan.min_balance < plan.reserve }}">{{ plan.min_balance|eur }}</div>
+    <div class="sub">il {{ plan.min_date|d }}</div></div>
+  <div class="kpi"><div class="label">Riserva di sicurezza</div><div class="value">{{ plan.reserve|eur }}</div>
+    <div class="sub">{{ cfg.inv_reserve_months|round(1)|string|replace('.0', '')|replace('.', ',') }} mesi di uscite medie ({{ plan.avg_monthly_out|eur }}/mese)</div></div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Ripartizione per area</h2>
+    {% if plan.investable %}{{ chart('c-alloc', chart_alloc, short=true) }}
+    {% else %}<p class="muted">Con i dati attuali non c'è liquidità investibile nell'orizzonte: guarda il grafico della liquidità per capire quando scende sotto la riserva.</p>{% endif %}
+    <table class="small" style="margin-top:10px">
+      <thead><tr><th>Area</th><th class="num">Quota</th><th class="num">Budget</th></tr></thead>
+      <tbody>{% for a in plan.allocations %}
+        <tr><td>{{ a.label }}{% if a.note %}<div class="muted">{{ a.note }}</div>{% endif %}</td>
+          <td class="num">{{ (a.share * 100)|round|int }}%</td><td class="num"><strong>{{ a.amount|eur }}</strong></td></tr>
+      {% endfor %}</tbody>
+    </table>
+    {% if plan.hire_monthly_budget %}
+    <p class="small">Con un costo aziendale medio di {{ (cfg.inv_hire_cost * 100)|int|eur }} al mese per persona, il budget HR sostiene circa
+      <strong>{{ ('%.1f'|format(plan.hires))|replace('.', ',') }}</strong> {{ 'assunzione' if plan.hires < 1.5 else 'assunzioni' }}.
+      Un'assunzione è un costo che si ripete: il budget HR è spalmato su almeno 12 mesi e l'app la considera sostenibile solo entro metà del margine di cassa ricorrente ({{ plan.recurring_surplus|eur_sign }} al mese negli ultimi 6 mesi).</p>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h2>Liquidità prevista</h2>
+    {{ chart('c-days', chart_days, [('Liquidità prevista', '--series-actual', 'line'), ('Riserva di sicurezza', '--critical', 'dash')]) }}
+    <p class="small muted">Saldo giorno per giorno con le entrate e le uscite previste pesate secondo lo scenario (incassi scaduti e pagamenti scaduti contati da oggi), integrate con le medie storiche nei mesi non ancora fatturati.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Entrate e uscite previste per mese</h2>
+  {{ chart('c-months', chart_months, [('Entrate previste', '--series-actual', 'bar'), ('Uscite previste', '--series-forecast', 'bar')], short=true) }}
+  <details class="small" style="margin-top:8px"><summary>Tabella dati</summary>
+    <table class="small"><thead><tr><th>Mese</th><th class="num">Entrate previste</th><th class="num">Uscite previste</th><th class="num">Saldo del mese</th></tr></thead>
+    <tbody>{% for k, i, o in plan.months %}<tr><td>{{ k }}</td><td class="num">{{ i|eur }}</td><td class="num">{{ o|eur }}</td><td class="num">{{ (i - o)|eur_sign }}</td></tr>{% endfor %}</tbody></table>
+  </details>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Impostazioni</h2>
+    <form method="post" action="/investimenti/impostazioni">
+      <input type="hidden" name="mesi" value="{{ mesi }}"><input type="hidden" name="scenario" value="{{ scenario }}">
+      <div class="form-grid">
+        {% for k, label in areas %}
+        <div class="field"><label>{{ label }} (%)</label><input name="inv_{{ k }}" inputmode="decimal" value="{{ cfg['inv_' ~ k]|round(1)|string|replace('.0', '') }}"></div>
+        {% endfor %}
+        <div class="field"><label>Riserva di sicurezza (mesi di uscite)</label><input name="inv_reserve_months" inputmode="decimal" value="{{ cfg.inv_reserve_months|round(1)|string|replace('.0', '') }}"></div>
+        <div class="field"><label>Costo aziendale medio per assunzione (€/mese)</label><input name="inv_hire_cost" inputmode="decimal" value="{{ cfg.inv_hire_cost|int }}"></div>
+      </div>
+      <p class="small muted">Le percentuali vengono riproporzionate se non sommano a 100.</p>
+      <button>Salva</button>
+    </form>
+  </div>
+  <div class="card small">
+    <h3>Come è calcolato</h3>
+    <ul class="note-list">
+      <li>Saldo di oggi + entrate previste − uscite previste (fatture, ricorrenze, voci manuali) nell'orizzonte.</li>
+      <li><strong>Scenari</strong>: prudente = incassi previsti all'85% e incassi già scaduti al 50%, uscite +5%; base = incassi previsti al 100% e scaduti all'80%; ottimista = tutto al 100%. I pagamenti scaduti si considerano da fare subito.</li>
+      <li><strong>Mesi non ancora fatturati</strong>: fatture e ricorrenze coprono solo ciò che è già noto. Ogni mese le entrate sono portate almeno alla media storica degli incassi ({{ plan.hist_in|eur }}/mese negli ultimi 6 mesi) pesata dallo scenario (prudente 50%, base 80%, ottimista 100%), e le uscite almeno alla media storica ({{ plan.avg_monthly_out|eur }}/mese). Quando collegheremo i contratti, gli incassi futuri saranno quelli reali.</li>
+      <li>Investibile = punto più basso della proiezione − riserva di sicurezza (il maggiore tra la soglia minima delle Impostazioni e i mesi di uscite indicati qui).</li>
+      <li><strong>Contratti</strong>: quando collegheremo i contratti con le rate di pagamento, le loro scadenze entreranno qui tra le entrate previste. Nel frattempo puoi inserirle come Ricorrenze o Entrate previste.</li>
+      <li>È una stima per decidere, non una garanzia: rivedila dopo ogni caricamento settimanale.</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}

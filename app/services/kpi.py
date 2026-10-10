@@ -1,0 +1,193 @@
+"""KPI economici e finanziari, mese per mese.
+
+Economici (per competenza, dalla data delle fatture, importi al netto dell'IVA):
+- Ricavi = imponibile delle fatture emesse (note di credito in negativo).
+- Costi esterni = imponibile delle fatture ricevute, comprese le autofatture per servizi esteri (TD17/TD18/TD19),
+  che rappresentano il costo di Google, AWS, Anthropic…; note di credito in negativo.
+- Personale = uscite bancarie della categoria "Stipendi e collaboratori" (per cassa: il costo del personale
+  non passa dalle fatture). I contributi pagati con F24 sono mescolati alle imposte e restano esclusi.
+- EBITDA (stimato) = Ricavi − Costi esterni − Personale.  È un'approssimazione gestionale, non il bilancio:
+  mancano ratei, risconti, rimanenze e i costi senza fattura elettronica.
+
+Finanziari (per cassa, dai movimenti bancari, giroconti esclusi): entrate, uscite, flusso netto, liquidità a fine mese,
+autonomia di cassa (runway), crediti e debiti aperti, tempi medi di incasso (DSO) e di pagamento (DPO)."""
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import date, timedelta
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models import Invoice, Transaction
+from app.services import categorize, invoice_match
+from app.services.fatturapa import CREDIT_NOTE_TYPES
+from app.services.forecast import calculators, forecast_accounts
+from app.services.util import add_months
+
+PERSONNEL = "Stipendi e collaboratori"
+
+
+@dataclass
+class Month:
+    key: str  # YYYY-MM
+    start: date
+    end: date
+    revenue: int = 0
+    external_costs: int = 0
+    personnel: int = 0
+    cash_in: int = 0
+    cash_out: int = 0
+    end_balance: int | None = None
+    invoices_without_vat: int = 0
+
+    @property
+    def ebitda(self) -> int:
+        return self.revenue - self.external_costs - self.personnel
+
+    @property
+    def margin(self) -> float | None:
+        return self.ebitda / self.revenue if self.revenue > 0 else None
+
+    @property
+    def net_cash(self) -> int:
+        return self.cash_in - self.cash_out
+
+
+@dataclass
+class KPIReport:
+    months: list[Month]
+    ytd_revenue: int
+    ytd_ebitda: int
+    ytd_margin: float | None
+    ytd_cash: int
+    revenue_growth: float | None  # ultimi 3 mesi vs 3 precedenti
+    balance_today: int
+    avg_monthly_out: int  # uscite medie degli ultimi 3 mesi completi
+    runway_months: float | None
+    receivables: int
+    receivables_overdue: int
+    payables: int
+    payables_overdue: int
+    dso: float | None
+    dpo: float | None
+    top_clients: list[tuple[str, int, float]] = field(default_factory=list)  # (cliente, ricavi 12 mesi, quota)
+    invoices_without_vat: int = 0
+    coverage_start: date | None = None
+
+
+def _month_start(d: date) -> date:
+    return d.replace(day=1)
+
+
+def _signed_taxable(inv: Invoice) -> tuple[int, bool]:
+    """Imponibile con segno (note di credito negative). Il secondo valore è True se l'IVA non è nota
+    (si usa il totale: sovrastima di circa il 22%)."""
+    base = inv.taxable_cents
+    missing = base is None
+    if missing:
+        base = abs(inv.total_cents)
+    return (-base if inv.doc_type in CREDIT_NOTE_TYPES else base), missing
+
+
+def _paid_days(statuses, direction: str, since: date) -> float | None:
+    """Giorni medi (ponderati per importo) tra data fattura e pagamento verificato da movimento."""
+    num = den = 0
+    for s in statuses:
+        inv = s.invoice
+        if inv.direction != direction or s.state != "pagata" or not s.paid_date or inv.doc_type in CREDIT_NOTE_TYPES:
+            continue
+        if s.paid_date < since or not s.transactions:
+            continue
+        w = abs(inv.total_cents)
+        num += max(0, (s.paid_date - inv.date).days) * w
+        den += w
+    return num / den if den else None
+
+
+def build(session: Session, months: int = 12, today: date | None = None) -> KPIReport:
+    today = today or date.today()
+    first = add_months(_month_start(today), -(months - 1))
+    rows: list[Month] = []
+    m = first
+    while m <= today:
+        nxt = add_months(m, 1)
+        rows.append(Month(key=f"{m.year}-{m.month:02d}", start=m, end=nxt - timedelta(days=1)))
+        m = nxt
+    by_key = {r.key: r for r in rows}
+
+    def bucket(d: date) -> Month | None:
+        return by_key.get(f"{d.year}-{d.month:02d}")
+
+    clients: dict[str, int] = defaultdict(int)
+    without_vat = 0
+    for inv in session.scalars(select(Invoice).where(Invoice.date >= first, Invoice.date <= today)):
+        r = bucket(inv.date)
+        if r is None:
+            continue
+        amount, missing = _signed_taxable(inv)
+        if missing and inv.total_cents:
+            r.invoices_without_vat += 1
+            without_vat += 1
+        if inv.direction == "attiva":
+            r.revenue += amount
+            clients[inv.counterparty] += amount
+        else:
+            r.external_costs += amount
+
+    txs = session.execute(
+        select(Transaction.date, Transaction.amount_cents, Transaction.category)
+        .where(Transaction.date >= first, Transaction.date <= today)
+    )
+    for d, amount, category in txs:
+        r = bucket(d)
+        if r is None or category == categorize.INTERNAL:
+            continue
+        if amount > 0:
+            r.cash_in += amount
+        else:
+            r.cash_out += -amount
+            if category == PERSONNEL:
+                r.personnel += -amount
+
+    accounts = forecast_accounts(session)
+    calcs = calculators(session, accounts)
+    for r in rows:
+        r.end_balance = sum(c.at(min(r.end, today)) for c in calcs.values()) if calcs else None
+    balance_today = sum(c.at(today) for c in calcs.values()) if calcs else 0
+
+    year_rows = [r for r in rows if r.start.year == today.year]
+    ytd_revenue = sum(r.revenue for r in year_rows)
+    ytd_ebitda = sum(r.ebitda for r in year_rows)
+    complete = [r for r in rows if r.end < _month_start(today)]
+    last3, prev3 = complete[-3:], complete[-6:-3]
+    rev_last, rev_prev = sum(r.revenue for r in last3), sum(r.revenue for r in prev3)
+    avg_out = sum(r.cash_out for r in last3) // len(last3) if last3 else 0
+
+    statuses = invoice_match.invoice_statuses(session)
+    open_rows = [s for s in statuses if s.state == "aperta"]
+
+    def open_total(direction: str, overdue: bool = False) -> int:
+        return sum(s.open_cents for s in open_rows if s.invoice.direction == direction and (not overdue or (s.due and s.due < today)))
+
+    total_clients = sum(v for v in clients.values() if v > 0)
+    top = sorted(((n, v, v / total_clients if total_clients else 0) for n, v in clients.items() if v > 0), key=lambda x: -x[1])[:5]
+    return KPIReport(
+        months=rows,
+        ytd_revenue=ytd_revenue,
+        ytd_ebitda=ytd_ebitda,
+        ytd_margin=ytd_ebitda / ytd_revenue if ytd_revenue > 0 else None,
+        ytd_cash=sum(r.net_cash for r in year_rows),
+        revenue_growth=(rev_last - rev_prev) / rev_prev if rev_prev > 0 and len(prev3) == 3 else None,
+        balance_today=balance_today,
+        avg_monthly_out=avg_out,
+        runway_months=balance_today / avg_out if avg_out > 0 else None,
+        receivables=open_total("attiva"),
+        receivables_overdue=open_total("attiva", True),
+        payables=open_total("passiva"),
+        payables_overdue=open_total("passiva", True),
+        dso=_paid_days(statuses, "attiva", today - timedelta(days=365)),
+        dpo=_paid_days(statuses, "passiva", today - timedelta(days=365)),
+        top_clients=top,
+        invoices_without_vat=without_vat,
+        coverage_start=invoice_match.coverage(session).start,
+    )

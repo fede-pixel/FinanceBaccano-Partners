@@ -120,6 +120,24 @@ Le banche spesso troncano il nome del beneficiario ("RENOVATIO SNC DI B"): per l
 
 Ogni vista si scarica in Excel. "Segna pagata" serve per i pagamenti da conti non caricati in app.
 
+## KPI economici e finanziari
+
+La pagina **KPI economici** mostra mese per mese (6, 12 o 24 mesi):
+- **Grafici**: ricavi, costi ed EBITDA stimato dalle fatture al netto dell'IVA, margine EBITDA, entrate e uscite di cassa, liquidità a fine mese.
+- **Indicatori**: autonomia di cassa, crediti e debiti aperti e scaduti, tempi medi di incasso e pagamento (DSO/DPO), principali clienti con avviso di concentrazione.
+
+L'EBITDA è stimato come Ricavi − Costi fornitori (incluse le autofatture dei servizi esteri) − stipendi pagati: è una misura gestionale, quella di bilancio la dà il commercialista. Le fatture importate prima dell'aggiornamento non hanno l'IVA separata: ricaricando una volta i report di Aruba (o gli XML) l'app la completa senza creare doppioni.
+
+## Capacità di investimento
+
+La pagina **Capacità di investimento** stima quanto si può investire nei prossimi 3, 6 o 12 mesi senza scendere sotto una riserva di sicurezza (N mesi di uscite medie, almeno la soglia minima):
+- **Proiezione**: saldo di oggi + entrate e uscite previste (fatture, ricorrenze, voci manuali), integrate con le medie storiche nei mesi non ancora fatturati.
+- **Scenari**: prudente, base e ottimista, che pesano diversamente gli incassi.
+- **Due cifre**: quanto si può spendere in modo graduale nell'orizzonte e quanto subito in una volta.
+- **Ripartizione**: tra marketing, HR e assunzioni, mezzi e macchinari, altro, con percentuali modificabili. Per le assunzioni indica il costo mensile sostenibile e il numero indicativo di persone.
+
+Quando saranno collegati i contratti con le rate di pagamento, le loro scadenze entreranno tra gli incassi previsti.
+
 ## Assistente AI
 
 La pagina **Assistente AI** è una chat con Claude che conosce i dati dell'app: saldi, liquidità prevista, fatture da pagare e da incassare, spese per categoria, scadenze per il commercialista. Risponde a domande libere ("chi ci deve pagare?", "dove spendiamo di più?", "riusciamo a pagare gli F24 del 16?") e dà consigli basati sui numeri.

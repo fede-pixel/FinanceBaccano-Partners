@@ -148,11 +148,17 @@ class Invoice(Base):
     counterparty: Mapped[str] = mapped_column(String(200))
     counterparty_vat: Mapped[str] = mapped_column(String(30), default="")
     total_cents: Mapped[int] = mapped_column(Integer)
+    vat_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)  # IVA; None = non nota (import vecchi)
     file_name: Mapped[str] = mapped_column(String(255))
     file_hash: Mapped[str] = mapped_column(String(64), unique=True)
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     planned_items: Mapped[list["PlannedItem"]] = relationship(back_populates="invoice", cascade="all, delete-orphan")
+
+    @property
+    def taxable_cents(self) -> int | None:
+        """Imponibile (totale meno IVA), positivo; None se l'IVA non è nota."""
+        return None if self.vat_cents is None else abs(self.total_cents) - abs(self.vat_cents)
 
 
 class PlannedItem(Base):

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% from "_macros.html" import chart %}
+{% block title %}KPI economici e finanziari{% endblock %}
+{% macro pctv(v) %}{{ '—' if v is none else ('%.1f'|format(v * 100))|replace('.', ',') ~ '%' }}{% endmacro %}
+{% block content %}
+<div class="page-head">
+  <div><h1>KPI economici e finanziari</h1>
+  <div class="muted">Andamento mese per mese: ricavi, costi ed EBITDA dalle fatture (al netto dell'IVA), cassa e liquidità dai movimenti bancari.</div></div>
+  <form method="get" class="toolbar">
+    <select name="mesi" onchange="this.form.submit()" aria-label="Periodo">
+      {% for v in (6, 12, 24) %}<option value="{{ v }}" {{ 'selected' if v == mesi }}>Ultimi {{ v }} mesi</option>{% endfor %}
+    </select>
+  </form>
+</div>
+
+{% if rep.invoices_without_vat %}
+<div class="alert warn small"><strong>{{ rep.invoices_without_vat }} fatture senza IVA indicata</strong> (importate prima di questo aggiornamento): per loro si usa il totale, quindi ricavi e costi risultano un po' più alti. Ricarica una volta i report di Aruba (ricevute ed emesse) o gli XML: l'app completa l'IVA senza creare doppioni.</div>
+{% endif %}
+
+<div class="kpis">
+  <div class="kpi"><div class="label">Ricavi dell'anno</div><div class="value">{{ rep.ytd_revenue|eur }}</div>
+    <div class="sub">{% if rep.revenue_growth is not none %}ultimi 3 mesi {{ '+' if rep.revenue_growth >= 0 }}{{ pctv(rep.revenue_growth) }} sui 3 precedenti{% else %}imponibile fatture emesse{% endif %}</div></div>
+  <div class="kpi"><div class="label">EBITDA dell'anno (stimato)</div><div class="value {{ 'neg' if rep.ytd_ebitda < 0 }}">{{ rep.ytd_ebitda|eur }}</div>
+    <div class="sub">margine {{ pctv(rep.ytd_margin) }}</div></div>
+  <div class="kpi"><div class="label">Flusso di cassa dell'anno</div><div class="value {{ 'neg' if rep.ytd_cash < 0 }}">{{ rep.ytd_cash|eur_sign }}</div>
+    <div class="sub">entrate − uscite bancarie, giroconti esclusi</div></div>
+  <div class="kpi"><div class="label">Liquidità oggi</div><div class="value">{{ rep.balance_today|eur }}</div>
+    <div class="sub">{% if rep.runway_months is not none %}autonomia {{ ('%.1f'|format(rep.runway_months))|replace('.', ',') }} mesi alle uscite medie ({{ rep.avg_monthly_out|eur }}/mese){% else %}autonomia non calcolabile{% endif %}</div></div>
+</div>
+<div class="kpis">
+  <div class="kpi"><div class="label">Crediti da incassare</div><div class="value">{{ rep.receivables|eur }}</div>
+    <div class="sub">{% if rep.receivables_overdue %}<span class="neg">di cui scaduti {{ rep.receivables_overdue|eur }}</span>{% else %}nessuno scaduto{% endif %}</div></div>
+  <div class="kpi"><div class="label">Debiti verso fornitori</div><div class="value">{{ rep.payables|eur }}</div>
+    <div class="sub">{% if rep.payables_overdue %}<span class="neg">di cui scaduti {{ rep.payables_overdue|eur }}</span>{% else %}nessuno scaduto{% endif %}</div></div>
+  <div class="kpi"><div class="label">Tempo medio di incasso (DSO)</div><div class="value">{{ '—' if rep.dso is none else rep.dso|round|int ~ ' gg' }}</div>
+    <div class="sub">dalla data fattura all'incasso verificato</div></div>
+  <div class="kpi"><div class="label">Tempo medio di pagamento (DPO)</div><div class="value">{{ '—' if rep.dpo is none else rep.dpo|round|int ~ ' gg' }}</div>
+    <div class="sub">dalla data fattura al pagamento verificato</div></div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card"><h2>Ricavi e costi</h2>
+    {{ chart('c-economics', charts.economics, [('Ricavi', '--series-actual', 'bar'), ('Costi fornitori', '--series-forecast', 'bar'), ('Personale', '--series-3', 'bar')]) }}</div>
+  <div class="card"><h2>EBITDA mensile (stimato)</h2>
+    {{ chart('c-ebitda', charts.ebitda) }}</div>
+  <div class="card"><h2>Margine EBITDA</h2>
+    {{ chart('c-margin', charts.margin, short=true) }}
+    <p class="small muted">EBITDA in percentuale dei ricavi; vuoto nei mesi senza ricavi.</p></div>
+  <div class="card"><h2>Liquidità a fine mese</h2>
+    {{ chart('c-balance', charts.balance, short=true) }}</div>
+  <div class="card"><h2>Entrate e uscite di cassa</h2>
+    {{ chart('c-cash', charts.cashflow, [('Entrate', '--series-actual', 'bar'), ('Uscite', '--series-forecast', 'bar')]) }}</div>
+  <div class="card"><h2>Principali clienti</h2>
+    {% if rep.top_clients %}
+    <table class="small"><thead><tr><th>Cliente</th><th class="num">Ricavi</th><th class="num">Quota</th></tr></thead><tbody>
+    {% for name, v, share in rep.top_clients %}<tr><td>{{ name }}</td><td class="num">{{ v|eur }}</td><td class="num">{{ pctv(share) }}</td></tr>{% endfor %}
+    </tbody></table>
+    {% if rep.top_clients[0][2] > 0.4 %}<p class="small"><span class="badge warn">Concentrazione</span> il primo cliente vale più del 40% dei ricavi: una sua perdita o un suo ritardo pesano molto sulla cassa.</p>{% endif %}
+    {% else %}<p class="muted">Nessuna fattura emessa nel periodo: carica il report delle fatture emesse.</p>{% endif %}
+  </div>
+</div>
+
+<details class="card">
+  <summary>Tabella dati mese per mese</summary>
+  <div class="table-wrap"><table class="small">
+    <thead><tr><th>Mese</th><th class="num">Ricavi</th><th class="num">Costi fornitori</th><th class="num">Personale</th><th class="num">EBITDA</th><th class="num">Margine</th><th class="num">Entrate cassa</th><th class="num">Uscite cassa</th><th class="num">Flusso netto</th><th class="num">Liquidità fine mese</th></tr></thead>
+    <tbody>{% for m in rep.months %}
+      <tr><td>{{ m.key }}</td><td class="num">{{ m.revenue|eur }}</td><td class="num">{{ m.external_costs|eur }}</td><td class="num">{{ m.personnel|eur }}</td>
+        <td class="num {{ 'neg' if m.ebitda < 0 }}">{{ m.ebitda|eur }}</td><td class="num">{{ pctv(m.margin) }}</td>
+        <td class="num">{{ m.cash_in|eur }}</td><td class="num">{{ m.cash_out|eur }}</td><td class="num">{{ m.net_cash|eur_sign }}</td>
+        <td class="num">{{ m.end_balance|eur if m.end_balance is not none else '—' }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</details>
+
+<div class="card small">
+  <h3>Come sono calcolati</h3>
+  <ul class="note-list">
+    <li><strong>Ricavi</strong>: imponibile delle fatture emesse nel mese (note di credito in negativo).</li>
+    <li><strong>Costi fornitori</strong>: imponibile delle fatture ricevute, comprese le autofatture dei servizi esteri (Google, AWS, Anthropic…).</li>
+    <li><strong>Personale</strong>: stipendi e compensi pagati dalla banca (categoria "Stipendi e collaboratori"). I contributi pagati con F24 non sono distinguibili dalle imposte e sono esclusi.</li>
+    <li><strong>EBITDA stimato</strong> = Ricavi − Costi fornitori − Personale. È una misura gestionale: non comprende ratei, risconti, rimanenze e le spese senza fattura elettronica. Il dato di bilancio lo dà il commercialista.</li>
+    <li><strong>Cassa</strong>: movimenti bancari dei conti caricati, giroconti esclusi.{% if rep.coverage_start %} Tutti i conti hanno movimenti dal {{ rep.coverage_start|d }}: prima di questa data i dati di cassa sono parziali.{% endif %}</li>
+    <li><strong>DSO / DPO</strong>: giorni medi, ponderati per importo, tra data fattura e pagamento collegato a un movimento (ultimi 12 mesi).</li>
+  </ul>
+</div>
+{% endblock %}

@@ -36,3 +36,13 @@
   {% endif %}
 </div>
 {%- endmacro %}
+
+{% macro chart(id, cfg, legend=[], short=false) -%}
+<script type="application/json" id="{{ id }}">{{ cfg|tojson }}</script>
+<div data-chart="{{ id }}">
+  {% if legend|length > 1 %}<div class="legend">{% for label, color, kind in legend %}
+    <span>{% if kind == 'line' %}<i style="border-color: var({{ color }})"></i>{% elif kind == 'dash' %}<i class="dashed" style="border-color: var({{ color }})"></i>{% else %}<span class="dot" style="background: var({{ color }})"></span>{% endif %}{{ label }}</span>
+  {% endfor %}</div>{% endif %}
+  <div class="chart-box {{ 'short' if short }}"><canvas role="img" aria-label="{{ cfg.title or id }}"></canvas></div>
+</div>
+{%- endmacro %}
