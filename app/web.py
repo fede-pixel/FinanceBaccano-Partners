@@ -88,6 +88,7 @@ NAV = [
         ("/kpi", "KPI economici"),
         ("/investimenti", "Capacità di investimento"),
         ("/analisi", "Analisi spese"),
+        ("/contratti", "Contratti e piani incasso"),
         ("/previsti", "Entrate e uscite previste"),
         ("/movimenti", "Movimenti"),
         ("/riconciliazione", "Riconciliazione"),

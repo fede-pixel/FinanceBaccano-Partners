@@ -29,7 +29,8 @@ def suggest_matches(session: Session, tolerance_days: int = 7, since: date | Non
             select(Transaction).where(Transaction.planned_item_id.is_(None), Transaction.date >= since).order_by(Transaction.date)
         )
     )
-    items = list(session.scalars(select(PlannedItem).where(PlannedItem.status == "previsto")))
+    # le rate stimate dei contratti si incassano con le fatture, non direttamente
+    items = list(session.scalars(select(PlannedItem).where(PlannedItem.status == "previsto", PlannedItem.contract_id.is_(None))))
     used: set[int] = set()
     out: list[Suggestion] = []
     for tx in txs:

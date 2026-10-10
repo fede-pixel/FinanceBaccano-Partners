@@ -84,6 +84,8 @@ def planned_save(
     item = session.get(PlannedItem, item_id) if item_id else PlannedItem(source="manuale")
     if item is None:
         _404()
+    if item.contract_id:
+        return redirect("/contratti", err="Le rate stimate si cambiano dal contratto (importi, già versato, data di fine)")
     item.title, item.due_date = title.strip(), d
     item.amount_cents = abs(cents) if direction == "entrata" else -abs(cents)
     item.account_id = account_id or None

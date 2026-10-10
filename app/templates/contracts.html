@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Contratti e piani incasso{% endblock %}
+{% block content %}
+{% set c0 = editing %}
+<div class="page-head">
+  <div><h1>Contratti e piani incasso</h1>
+  <div class="muted">Il residuo di ogni contratto diventa entrate previste, divise in parti uguali per mese fino alla data di fine: entra in forecast, dashboard e capacità di investimento.</div></div>
+</div>
+
+{% if plans %}
+<div class="kpis">
+  <div class="kpi"><div class="label">Da incassare sui contratti attivi</div><div class="value">{{ total_to_plan|eur }}</div>
+    <div class="sub">IVA compresa, al netto delle fatture già emesse dopo l'aggiornamento</div></div>
+</div>
+{% endif %}
+
+{% for p in plans %}{% set c = p.contract %}
+<div class="card" id="c{{ c.id }}">
+  <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline">
+    <h2 style="margin:0">{{ c.client }}{% if c.title %} <span class="muted" style="font-weight:400">· {{ c.title }}</span>{% endif %}
+      {% if not c.active %}<span class="badge">chiuso</span>{% endif %}</h2>
+    <div class="toolbar">
+      <a class="btn btn-ghost small" href="/contratti?edit={{ c.id }}#form">Modifica</a>
+      <form method="post" action="/contratti/{{ c.id }}/stato"><button class="small ghost">{{ 'Chiudi' if c.active else 'Riattiva' }}</button></form>
+      <form method="post" action="/contratti/{{ c.id }}/elimina" data-confirm="Eliminare il contratto e le sue rate previste?"><button class="small ghost">Elimina</button></form>
+    </div>
+  </div>
+  <table class="small" style="max-width:720px;margin-top:8px"><tbody>
+    <tr><td>Importo appalto (imponibile)</td><td class="num">{{ c.total_taxable_cents|eur }}</td></tr>
+    <tr><td>− Già versato al {{ c.as_of|d }} (imponibile)</td><td class="num">{{ (-c.paid_taxable_cents)|eur_sign }}</td></tr>
+    <tr><td><strong>= Residuo con IVA {{ c.vat_rate }}%</strong></td><td class="num"><strong>{{ p.residual|eur }}</strong></td></tr>
+    {% if p.invoices %}<tr><td>− Fatture emesse dopo il {{ c.as_of|d }} (il loro incasso è previsto in Fatture da saldare):
+      {% for i in p.invoices %}<div>n. {{ i.number }} del {{ i.date|d }} ({{ i.total_cents|eur }})
+        <form method="post" action="/contratti/{{ c.id }}/fattura" style="display:inline"><input type="hidden" name="invoice_id" value="{{ i.id }}">
+        <button class="small ghost" title="Extra o fornitura a parte: non scala il residuo del contratto">non fa parte del contratto</button></form></div>{% endfor %}</td>
+      <td class="num">{{ (-p.invoiced_after)|eur_sign }}</td></tr>{% endif %}
+    {% if p.outside %}<tr><td class="muted">Fuori contratto (non scalano il residuo):
+      {% for i in p.outside %}<div>n. {{ i.number }} del {{ i.date|d }} ({{ i.total_cents|eur }})
+        <form method="post" action="/contratti/{{ c.id }}/fattura" style="display:inline"><input type="hidden" name="invoice_id" value="{{ i.id }}">
+        <input type="hidden" name="inside" value="1"><button class="small ghost">rimetti nel contratto</button></form></div>{% endfor %}</td><td></td></tr>{% endif %}
+    {% if p.kept %}<tr><td>− Rate segnate incassate a mano</td><td class="num">{{ (-p.kept)|eur_sign }}</td></tr>{% endif %}
+    <tr><td><strong>= Da incassare entro {{ c.end_date.strftime('%m/%Y') }}</strong></td><td class="num"><strong>{{ p.to_plan|eur }}</strong></td></tr>
+  </tbody></table>
+  {% set rate = p.items|selectattr('status', 'equalto', 'previsto')|list %}
+  {% if rate %}
+  <div class="table-wrap"><table class="small" style="max-width:720px">
+    <thead><tr><th>Entro il</th><th>Rata stimata</th><th class="num">Importo</th></tr></thead>
+    <tbody>{% for it in rate %}<tr><td>{{ it.due_date|d }}</td><td>{{ it.title }}</td><td class="num">{{ it.amount_cents|eur }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+  {% if c.notes %}<p class="small muted">{{ c.notes }}</p>{% endif %}
+</div>
+{% endfor %}
+
+<div class="card" id="form">
+  <h2>{{ 'Modifica contratto' if c0 else 'Nuovo contratto' }}</h2>
+  <form method="post" action="/contratti/salva">
+    <input type="hidden" name="contract_id" value="{{ c0.id if c0 else 0 }}">
+    <div class="form-grid">
+      <div class="field" style="grid-column: span 2"><label>Cliente (come nelle fatture)</label><input name="client" required value="{{ c0.client if c0 }}" placeholder="es. DMG Analytics & Consulting S.r.l.s."></div>
+      <div class="field" style="grid-column: span 2"><label>Cantiere / descrizione</label><input name="title" value="{{ c0.title if c0 }}"></div>
+      <div class="field"><label>Importo appalto, imponibile (€)</label><input name="total" required value="{{ c0.total_taxable_cents|cents_input if c0 }}"></div>
+      <div class="field"><label>Già versato, imponibile (€)</label><input name="paid" value="{{ c0.paid_taxable_cents|cents_input if c0 else '0' }}"></div>
+      <div class="field"><label>IVA %</label><input type="number" min="0" max="30" name="vat_rate" value="{{ c0.vat_rate if c0 else 10 }}"></div>
+      <div class="field"><label>Piano aggiornato al</label><input type="date" name="as_of" required value="{{ (c0.as_of if c0 else today).isoformat() }}"></div>
+      <div class="field"><label>Incassato tutto entro</label><input type="date" name="end_date" required value="{{ c0.end_date.isoformat() if c0 }}"></div>
+      <div class="field"><label>Conto di incasso</label><select name="account_id"><option value="0">— qualsiasi —</option>
+        {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if c0 and c0.account_id == a.id }}>{{ a.name }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="field"><label>Note</label><textarea name="notes">{{ c0.notes if c0 }}</textarea></div>
+    <p class="small muted">"Già versato" comprende tutte le fatture di acconto emesse fino alla data di aggiornamento. Le fatture emesse al cliente dopo quella data scalano da sole il residuo, perché il loro incasso è già previsto dalla fattura. Per questo, quando aggiorni il piano, sposta in avanti anche la data. Il residuo è diviso in parti uguali per i mesi dal mese corrente alla data di fine, con la rata a fine mese. Il calcolo si ripete ogni mese e dopo ogni modifica.</p>
+    <button>Salva</button> {% if c0 %}<a href="/contratti" class="btn btn-ghost">Annulla</a>{% endif %}
+  </form>
+</div>
+{% endblock %}

@@ -169,6 +169,38 @@ class Invoice(Base):
         return None if self.vat_cents is None else abs(self.total_cents) - abs(self.vat_cents)
 
 
+class Contract(Base):
+    """Contratto con un cliente: il residuo da incassare diventa entrate previste, divise in parti uguali per mese
+    fino alla data di fine. Le fatture emesse al cliente dopo la data di aggiornamento scalano il residuo
+    (da quel momento l'incasso è previsto dalla fattura stessa)."""
+
+    __tablename__ = "contracts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client: Mapped[str] = mapped_column(String(200))
+    title: Mapped[str] = mapped_column(String(200), default="")  # es. cantiere
+    total_taxable_cents: Mapped[int] = mapped_column(Integer)  # importo dell'appalto (imponibile)
+    paid_taxable_cents: Mapped[int] = mapped_column(Integer, default=0)  # già fatturato/versato alla data di aggiornamento
+    vat_rate: Mapped[int] = mapped_column(Integer, default=10)  # percentuale
+    as_of: Mapped[_Date] = mapped_column(Date)  # data dell'ultimo aggiornamento del piano
+    end_date: Mapped[_Date] = mapped_column(Date)  # entro quando arriva tutto
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    # id delle fatture al cliente che non fanno parte del contratto (extra, forniture a parte), separati da virgola
+    excluded_invoices: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+    @property
+    def excluded_ids(self) -> set[int]:
+        return {int(x) for x in self.excluded_invoices.split(",") if x.strip().isdigit()}
+
+    @property
+    def residual_gross_cents(self) -> int:
+        """Residuo da incassare alla data di aggiornamento, IVA compresa."""
+        return round((self.total_taxable_cents - self.paid_taxable_cents) * (100 + self.vat_rate) / 100)
+
+
 class PlannedItem(Base):
     """Entrata/uscita prevista in una data."""
 
@@ -191,6 +223,7 @@ class PlannedItem(Base):
     )
     occurrence_key: Mapped[date | None] = mapped_column(Date, nullable=True)
     invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id", ondelete="CASCADE"), nullable=True)
+    contract_id: Mapped[int | None] = mapped_column(ForeignKey("contracts.id", ondelete="CASCADE"), nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     # come è stata saldata: "movimento" (trovato il pagamento), "compensata" (nota di credito), "manuale",
     # "" = segnata pagata senza movimento collegato (es. import storico con "già saldate prima del")

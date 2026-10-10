@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal, init_engine
 from app.models import Transaction
-from app.routers import accounts, admin, analysis, assistant, banks, economics, notes, dashboard, invoice_status, planning, settings, upload
+from app.routers import accounts, admin, analysis, assistant, banks, contracts, economics, notes, dashboard, invoice_status, planning, settings, upload
 from app.services.admin_docs import ensure_checklist, seed_categories
 from app.services.recurrence import sync_all
 
@@ -35,6 +35,11 @@ def bootstrap(db_path=None) -> None:
 
         if fix_self_invoices(session):
             session.commit()
+        from app.services import contracts
+
+        contracts.seed_dmg(session)
+        contracts.sync_all(session)  # le rate partono dal mese corrente: si spostano col passare dei mesi
+        session.commit()
         from app.services.util import get_setting, set_setting
 
         if get_setting(session, "rules_version") != categorize.RULES_VERSION:
@@ -168,7 +173,7 @@ def create_app() -> FastAPI:
                 return PlainTextResponse("Richiesta bloccata: origine non locale", status_code=403)
         return await call_next(request)
 
-    for r in (auth, dashboard, upload, accounts, analysis, notes, assistant, banks, economics, invoice_status, planning, admin, settings):
+    for r in (auth, dashboard, upload, accounts, analysis, contracts, notes, assistant, banks, economics, invoice_status, planning, admin, settings):
         app.include_router(r.router)
     return app
 

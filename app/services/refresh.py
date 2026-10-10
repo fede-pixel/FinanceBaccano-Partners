@@ -3,7 +3,7 @@
 Quasi tutto nell'app è calcolato al momento (saldi, forecast, KPI, IVA, investimenti, situazione fatture, schede
 cliente): si aggiorna da solo. Alcune cose invece sono salvate e vanno riallineate quando cambia un dato da cui
 dipendono. Dopo ogni salvataggio, caricamento o cancellazione:
-1. le ricorrenze rigenerano le voci previste future;
+1. le ricorrenze e i piani dei contratti rigenerano le voci previste future;
 2. le categorie automatiche dei movimenti (e i giroconti tra conti propri) vengono ricalcolate;
 3. il controllo incrociato fatture/movimenti fa gli abbinamenti certi;
 4. gli Excel dei movimenti generati per il commercialista vengono rifatti se i movimenti del periodo sono cambiati
@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Account, ChecklistItem, DocCategory, Transaction
-from app.services import admin_docs, categorize, invoice_match, recurrence
+from app.services import admin_docs, categorize, contracts, invoice_match, recurrence
 from app.services.util import get_setting, set_setting
 
 log = logging.getLogger(__name__)
@@ -78,6 +78,7 @@ def remember_export(session: Session, item: ChecklistItem) -> None:
 def refresh_all(session: Session) -> dict:
     t0 = time.monotonic()
     recurrence.sync_all(session)
+    contracts.sync_all(session)
     recategorized = categorize.apply(session)
     session.flush()
     matched = invoice_match.run(session)
