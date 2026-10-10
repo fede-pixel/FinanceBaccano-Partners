@@ -14,10 +14,19 @@ from sqlalchemy.orm import Session
 from app.models import Account, CategoryRule, Transaction
 from app.services import merchant
 
-RULES_VERSION = "2"  # aumentarlo quando cambia la logica: all'avvio le categorie automatiche vengono ricalcolate
+RULES_VERSION = "3"  # aumentarlo quando cambia la logica: all'avvio le categorie automatiche vengono ricalcolate
 INTERNAL = "Giroconti"  # trasferimenti tra conti propri: esclusi dall'analisi
 OTHER = "Altro"
 INCOME = "Entrate"
+SUBCONTRACT = "Subappalti e conto terzi"
+GENERIC = "Fornitori"  # categoria generica: per i bonifici vince la regola dei subappalti
+
+# Bonifici in uscita: "Bonifico SEPA a favore di…", "Bon. istantaneo", "SEPA Credit Transfer", Revolut "To Mario Rossi"
+_TRANSFER = re.compile(
+    r"\bbon\.|\b(bonifico|bonifici|bonif|sepa credit transfer|credit transfer|transfer to|"
+    r"disposizione di pagamento|trasferimento a favore)\b|^\s*to\s+\S",
+    re.I,
+)
 
 # (categoria, parole chiave). L'ordine conta: la prima regola che corrisponde vince.
 DEFAULT_RULES: list[tuple[str, list[str]]] = [
@@ -29,6 +38,7 @@ DEFAULT_RULES: list[tuple[str, list[str]]] = [
                                   "compenso amministratore", "tfr", "rimborso spese dipendente"]),
     ("Consulenze e professionisti", ["commercialist", "notai", "avvocat", "consulenz", "consulent", "studio legale",
                                      "studio associato", "parcella", "onorario"]),
+    (SUBCONTRACT, ["subappalt", "conto terzi", "c.terzi", "manodopera", "stato avanzamento lavori", "prestazione occasionale"]),
     ("Pubblicità e marketing", ["facebk", "facebook", "meta ads", "meta platforms", "instagram", "google ads", "googleads",
                                 "linkedin", "tiktok", "pinterest", "mailchimp", "semrush", "hubspot", "sponsor"]),
     ("Software e abbonamenti", ["google", "gsuite", "workspace", "microsoft", "office 365", "adobe", "aws", "amazon web services",
@@ -56,9 +66,14 @@ DEFAULT_RULES: list[tuple[str, list[str]]] = [
     ("Banca e commissioni", ["commissione", "commissioni", "canone conto", "spese tenuta", "imposta di bollo", "bollo",
                              "interessi passivi", "competenze", "fee", "spese bonifico", "canone mensile"]),
     ("Prelievi contanti", ["prelievo", "atm", "bancomat", "cash withdrawal"]),
-    ("Fornitori", ["fattura", "fatt.", "fatt ", "ft.", "saldo fattura", "acconto fattura"]),
+    (GENERIC, ["fattura", "fatt.", "fatt ", "ft.", "saldo fattura", "acconto fattura"]),
 ]
 CATEGORIES = [c for c, _ in DEFAULT_RULES] + [OTHER]
+
+
+def is_transfer(description: str, counterparty: str = "") -> bool:
+    return bool(_TRANSFER.search(description or "") or _TRANSFER.search(counterparty or ""))
+
 
 def norm(text: str) -> str:
     return " " + re.sub(r"\s+", " ", re.sub(r"[^a-z0-9àèéìòù&.]+", " ", (text or "").lower())).strip() + " "
@@ -94,9 +109,13 @@ def seed_rules(session: Session) -> None:
 class Categorizer:
     # (pattern, categoria, parole) in ordine di valutazione; con "parole" basta che ci siano tutte, in qualsiasi punto
     rules: list[tuple[str, str, frozenset[str] | None]]
+    own_name: frozenset[str] = frozenset()  # parole della ragione sociale: un bonifico a noi stessi è un giroconto
 
     @classmethod
     def load(cls, session: Session) -> "Categorizer":
+        from app.services.util import get_setting
+
+        own = frozenset(w for w in norm(get_setting(session, "company_name")).split() if len(w) > 2)
         rules = []
         for r in session.scalars(select(CategoryRule).order_by(CategoryRule.priority, CategoryRule.id)):
             p = r.pattern.strip().lower()
@@ -106,18 +125,28 @@ class Categorizer:
                 # la parola chiave deve iniziare una parola del testo ("esso" non scatta dentro "presso"),
                 # le più corte devono coincidere con una parola intera ("bar" non scatta in "barbieri")
                 rules.append((f" {p} " if len(p) <= 3 else f" {p}", r.category, None))
-        return cls(rules)
+        return cls(rules, own)
 
     def category_for(self, description: str, counterparty: str, amount_cents: int) -> str:
         # testo originale + nome dell'esercente riconosciuto (es. "AMZN Mktp" -> "Amazon")
         text = norm(f"{counterparty} {description} {merchant.merchant_name(description, counterparty)}")
         words = set(text.split())
+        found = None
         for pattern, category, needed in self.rules:
             if (needed <= words) if needed else (pattern in text):
-                if amount_cents > 0 and category not in (INTERNAL,):
-                    return INCOME
-                return category
-        return INCOME if amount_cents > 0 else OTHER
+                found = category
+                break
+        if found and amount_cents > 0 and found != INTERNAL:
+            return INCOME
+        if amount_cents > 0:
+            return found or INCOME
+        if (found is None or found == GENERIC) and is_transfer(description, counterparty):
+            # Regola base: i bonifici a persone e ditte (Mario Rossi, Edilizia Bianchi…) sono subappalti e lavori
+            # conto terzi. Le categorie specifiche (tasse, stipendi, consulenze, utenze…) e le tue regole vincono.
+            if self.own_name and self.own_name <= words:
+                return INTERNAL
+            return SUBCONTRACT
+        return found or OTHER
 
 
 def apply(session: Session, txs: list[Transaction] | None = None, cat: Categorizer | None = None) -> int:

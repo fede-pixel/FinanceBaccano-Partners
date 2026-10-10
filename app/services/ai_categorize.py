@@ -18,6 +18,9 @@ PROMPT = """Sei l'assistente amministrativo di una piccola società italiana di 
 Per ogni esercente/controparte qui sotto (con una descrizione bancaria d'esempio) scegli la categoria di spesa più adatta,
 usando SOLO una delle categorie ammesse. Se non sei ragionevolmente sicuro, rispondi "{other}".
 Non usare "{internal}" (giroconti) né "Entrate".
+Regola dell'azienda: i pagamenti e i bonifici verso persone fisiche (es. "Giorgio Cicero", "Davide Massimiani")
+e verso piccole ditte o imprese individuali (es. "Renovatio di Cipriani e Boezio") sono operai e ditte che lavorano
+per noi: classificali sempre come "{subcontract}". Restano esclusi i nomi di negozi, marchi, enti e servizi noti.
 
 Categorie ammesse: {categories}
 
@@ -71,7 +74,7 @@ def suggest(session: Session, clusters: list[categorize.Cluster], client=None) -
             fallbacks="default",
             output_config={"effort": "low", "format": {"type": "json_schema", "schema": schema}},
             messages=[{"role": "user", "content": PROMPT.format(
-                other=categorize.OTHER, internal=categorize.INTERNAL, categories=", ".join(cats), items=items)}],
+                other=categorize.OTHER, internal=categorize.INTERNAL, subcontract=categorize.SUBCONTRACT, categories=", ".join(cats), items=items)}],
         )
     except anthropic.AuthenticationError as exc:
         raise AIUnavailable("Chiave API di Anthropic non valida: controlla ANTHROPIC_API_KEY") from exc

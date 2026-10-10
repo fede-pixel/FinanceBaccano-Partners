@@ -118,3 +118,28 @@ def test_keywords_match_only_at_word_start(session):
     assert c.category_for("ESSO STATION ROMA", "", -100) == "Carburante e trasporti"
     assert c.category_for("ASSICURAZIONE AUTO RCA", "", -100) == "Assicurazioni"  # prefisso "assicuraz"
     assert c.category_for("SPESE BONIFICO", "", -100) == "Banca e commissioni"
+
+
+def test_transfers_to_people_and_small_firms_are_subcontracts(session):
+    cz.seed_rules(session)
+    c = cz.Categorizer.load(session)
+    sub = "Subappalti e conto terzi"
+    cases = [
+        ("Bonifico SEPA a favore di Giorgio Cicero", ""),
+        ("BON. ISTANTANEO DAVIDE MASSIMIANI CRO 123456", ""),
+        ("Bonifico disposto a favore di RENOVATIO DI CIPRIANI E BOEZIO", ""),
+        ("To Davide Massimiani", ""),  # Revolut
+        ("Bonifico saldo fattura 12/2026", "Giorgio Cicero"),  # "fattura" generica: vince il subappalto
+        ("Pagamento manodopera cantiere", ""),
+    ]
+    for desc, cp in cases:
+        assert c.category_for(desc, cp, -150000) == sub, desc
+    # le categorie specifiche e i giroconti restano tali
+    assert c.category_for("BONIFICO STIPENDIO SETTEMBRE MARIO ROSSI", "", -150000) == "Stipendi e collaboratori"
+    assert c.category_for("Bonifico a favore Studio commercialista Verdi", "", -50000) == "Consulenze e professionisti"
+    assert c.category_for("Bonifico F24 Agenzia delle Entrate", "", -50000) == "Tasse e contributi"
+    assert c.category_for("Bonifico a favore di Baccano Partners srl", "", -50000) == "Giroconti"
+    assert c.category_for("To EUR pocket", "", -50000) == "Giroconti"
+    # entrate e pagamenti con carta non cambiano
+    assert c.category_for("Bonifico da Giorgio Cicero", "", 50000) == "Entrate"
+    assert c.category_for("PAGAMENTO POS FERRAMENTA BIANCHI", "", -5000) == "Altro"

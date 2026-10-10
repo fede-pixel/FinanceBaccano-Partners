@@ -99,6 +99,8 @@ Ogni movimento riceve in automatico una categoria (Software e abbonamenti, Carbu
 
 L'app ricava dalla descrizione il nome dell'esercente, togliendo le parti bancarie che non servono (tipo di operazione, carta, data e ora, mandati SDD, riferimenti, circuiti come PayPal/SumUp, città) e riconoscendo i marchi più comuni: "AMZN Mktp IT*1A2B", "AMAZON EU SARL" e "Amazon.it" diventano tutti **Amazon**. Nella pagina Analisi il riquadro **Da classificare** raggruppa per esercente le spese finite in "Altro": una scelta vale per tutto il gruppo e per i movimenti futuri. Con la chiave Anthropic attiva, **Classifica con l'AI** fa proporre a Claude la categoria dei gruppi rimasti, scegliendo solo tra le tue categorie (vengono inviati solo i nomi degli esercenti e una descrizione d'esempio, senza importi).
 
+**Regola base dei bonifici:** i bonifici in uscita verso persone e ditte (es. "Giorgio Cicero", "Renovatio di Cipriani e Boezio") finiscono in **Subappalti e conto terzi**, perché sono operai e ditte che lavorano per noi. Restano nella loro categoria i bonifici riconoscibili come tasse, stipendi, consulenze, utenze, affitto ecc., e i bonifici verso la nostra società sono giroconti. La stessa regola vale per la classificazione con l'AI.
+
 Quando una categoria è sbagliata, correggila in **Movimenti**: l'app crea una regola e la applica a tutti i movimenti dello stesso fornitore, presenti e futuri. Le categorie scelte a mano non vengono mai sovrascritte.
 
 ## Come funziona il forecast
