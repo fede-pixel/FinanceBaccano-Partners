@@ -38,7 +38,7 @@
   <h2>Collegamento colonne</h2>
   <div class="form-grid">
     <div class="field"><label>Riga intestazione (n° riga del file − 1)</label><input type="number" min="0" name="header_row" value="{{ profile.header_row }}"></div>
-    <div class="field"><label>Colonna data</label>{{ col_select('date_col', profile.date_col, false) }}</div>
+    <div class="field"><label>Colonna data</label>{{ col_select('date_col', profile.date_col) }}</div>
     <div class="field"><label>Formato data</label><select name="date_format">
       {% for f, l in [('auto','Automatico'), ('%d/%m/%Y','gg/mm/aaaa'), ('%Y-%m-%d','aaaa-mm-gg'), ('%m/%d/%Y','mm/gg/aaaa (USA)'), ('%d.%m.%Y','gg.mm.aaaa')] %}
       <option value="{{ f }}" {{ 'selected' if profile.date_format == f }}>{{ l }}</option>{% endfor %}
