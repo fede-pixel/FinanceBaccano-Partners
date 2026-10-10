@@ -69,6 +69,29 @@
   </ul>
 </details>
 
+<details class="card" {{ 'open' if prov.late }}>
+  <summary><strong>Confronto con la chiusura provvisoria del commercialista</strong> — al {{ prov.cutoff|d }}</summary>
+  <form method="get" class="toolbar" style="margin-top:8px"><input type="hidden" name="mesi" value="{{ mesi }}">
+    <label class="small">Data della chiusura provvisoria</label><input type="date" name="provvisorio" value="{{ prov.cutoff.isoformat() }}">
+    <button class="ghost small">Aggiorna</button></form>
+  <table class="small" style="max-width:860px">
+    <thead><tr><th></th><th class="num">Come lo vedeva il commercialista<div class="muted" style="font-weight:400">fatture arrivate entro il {{ prov.cutoff|d }}</div></th>
+      <th class="num">Come risulta oggi<div class="muted" style="font-weight:400">con i costi arrivati dopo</div></th></tr></thead>
+    <tbody>
+      <tr><td>Ricavi (imponibile, dal 1/1)</td><td class="num">{{ prov.revenue|eur }}</td><td class="num">{{ prov.revenue|eur }}</td></tr>
+      <tr><td>− Costi fornitori e autofatture (imponibile)</td><td class="num">{{ (-prov.costs_known)|eur_sign }}</td><td class="num">{{ (-prov.costs_all)|eur_sign }}</td></tr>
+      <tr><td>− Personale (stipendi pagati)</td><td class="num">{{ (-prov.personnel)|eur_sign }}</td><td class="num">{{ (-prov.personnel)|eur_sign }}</td></tr>
+      <tr><td><strong>= Risultato operativo stimato</strong></td><td class="num"><strong>{{ prov.margin_known|eur_sign }}</strong></td><td class="num"><strong>{{ prov.margin_all|eur_sign }}</strong></td></tr>
+    </tbody>
+  </table>
+  {% if prov.late %}
+  <p class="small">{{ prov.late|length }} fatture di costo con data entro il {{ prov.cutoff|d }} sono arrivate <strong>dopo</strong> la chiusura
+    ({{ (prov.costs_all - prov.costs_known)|eur }}): il provvisorio non poteva contarle, quindi risultava più alto. Le principali:</p>
+  <ul class="note-list small">{% for n, party, d, rec, amount in prov.late[:8] %}<li>{{ party }} n. {{ n }} del {{ d|d }}, arrivata il {{ rec|d }}: {{ amount|eur }}</li>{% endfor %}</ul>
+  {% else %}<p class="small muted">Nessun costo arrivato dopo la chiusura (o date di ricezione non disponibili: ricarica i report di Aruba).</p>{% endif %}
+  <p class="small muted">Il provvisorio del commercialista può contenere anche voci che qui non ci sono: rimanenze e lavori in corso, ammortamenti, ratei e risconti, contributi, imposte.</p>
+</details>
+
 <div class="grid grid-2">
   <div class="card"><h2>Ricavi e costi</h2>
     {{ chart('c-economics', charts.economics, [('Ricavi', '--series-actual', 'bar'), ('Costi fornitori', '--series-forecast', 'bar'), ('Personale', '--series-3', 'bar')]) }}</div>

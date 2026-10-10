@@ -157,3 +157,23 @@ def test_self_invoices_in_both_reports_are_costs(session):
     af.direction = "attiva"
     session.commit()
     assert fix_self_invoices(session) == 1 and af.direction == "passiva"
+
+
+def test_rejected_rows_received_date_and_provisional(session):
+    from app.services import kpi
+
+    emesse = _report("Cliente", [
+        ["FPR 17/26", "ok.xml", "100", date(2026, 5, 22), date(2026, 5, 22), "Fattura - TD01", "Priscilla Gerico", "1", "", "", 9000, 900, 9900, 9900, "", None, "Consegnata"],
+        ["FPR 17/26", "ko.xml", "101", date(2026, 5, 22), date(2026, 5, 22), "Fattura - TD01", "Priscilla Gerico", "1", "", "", 9000, 900, 9900, 9900, "", None, "Scartata"],
+    ])
+    ricevute = _report("Fornitore", [
+        ["A1", "a.xml", "200", date(2026, 7, 10), date(2026, 7, 9), "Fattura - TD01", "Forn A", "2", "", "", 1000, 220, 1220, 1220, "Non pagata", None, ""],
+        ["B1", "b.xml", "201", date(2026, 8, 3), date(2026, 7, 31), "Fattura - TD01", "Forn B", "3", "", "", 3000, 660, 3660, 3660, "Non pagata", None, ""],
+    ])
+    r = import_invoices(session, [("ReportFattureInviate.xlsx", emesse)], company_vat="")
+    assert len(r.imported) == 1 and r.rejected == ["FPR 17/26"]
+    import_invoices(session, [("ReportFattureRicevute.xlsx", ricevute)], company_vat="")
+    session.commit()
+    p = kpi.provisional_view(session, date(2026, 7, 31))
+    assert p.revenue == 900_000 and p.costs_known == 100_000 and p.costs_all == 400_000
+    assert p.margin_known == 800_000 and p.margin_all == 500_000 and p.late[0][1] == "Forn B"

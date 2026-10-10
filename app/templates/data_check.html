@@ -21,7 +21,7 @@
       <tr><td>Differenza emesse − ricevute</td><td></td><td class="num">{{ (tot.issued_gross - tot.received_gross)|eur_sign }}</td><td class="num">{{ (tot.issued_taxable - tot.received_taxable)|eur_sign }}</td></tr>
     </tbody>
   </table>
-  <p class="small muted">Le autofatture estere (TD17/TD18, {{ tot.self_gross|eur }}) sono contate come nella lista di Aruba, sia tra le emesse sia tra le ricevute, ed escluse dall'imponibile come nel grafico. Se un numero non coincide con Aruba, di solito mancano fatture recenti: ricarica i report aggiornati a oggi. Su Aruba seleziona tutto l'anno ({{ anno }}).</p>
+  <p class="small muted">Le autofatture estere (TD17/TD18, {{ tot.self_gross|eur }}) sono contate come nella lista di Aruba, sia tra le emesse sia tra le ricevute, ed escluse dall'imponibile come nel grafico. Le fatture <strong>scartate dallo SdI</strong> non sono fatture valide e qui sono escluse: se le selezioni su Aruba, il totale della lista risulta più alto (stato "Scartata"). Se un numero non coincide con Aruba, di solito mancano fatture recenti: ricarica i report aggiornati a oggi. Su Aruba seleziona tutto l'anno ({{ anno }}).</p>
 </div>
 
 <div class="card">

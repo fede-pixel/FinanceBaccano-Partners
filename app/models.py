@@ -1,6 +1,7 @@
 """Modello dati. Gli importi sono sempre in centesimi (int) con segno:
 positivo = entrata, negativo = uscita."""
 from datetime import date, datetime
+from datetime import date as _Date  # per le classi che hanno una colonna chiamata "date"
 from pathlib import PurePath
 
 from sqlalchemy import (
@@ -151,6 +152,8 @@ class Invoice(Base):
     counterparty_vat: Mapped[str] = mapped_column(String(30), default="")
     total_cents: Mapped[int] = mapped_column(Integer)
     vat_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)  # IVA; None = non nota (import vecchi)
+    # data di ricezione (ricevute) o invio (emesse) sullo SdI: serve a capire cosa aveva il commercialista a una certa data
+    received_date: Mapped[_Date | None] = mapped_column(Date, nullable=True)
     file_name: Mapped[str] = mapped_column(String(255))
     file_hash: Mapped[str] = mapped_column(String(64), unique=True)
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

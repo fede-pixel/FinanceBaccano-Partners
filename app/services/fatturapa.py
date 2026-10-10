@@ -199,6 +199,8 @@ class ReportRow:
     method_code: str
     paid: bool
     paid_date: date | None
+    received_date: date | None = None
+    rejected: bool = False  # "Scartata" dallo SdI: non è una fattura valida
 
 
 def _report_header(rows: list[list[str]]) -> tuple[int, dict[str, int]] | None:
@@ -265,10 +267,19 @@ def parse_aruba_report(filename: str, content: bytes) -> tuple[str, list[ReportR
             total_cents=total, to_pay_cents=net if net is not None else total,
             vat_cents=parse_amount(get(row, "totale iva"), ".") if "totale iva" in cols else None,
             method_code=method.group(0) if method else "",
-            paid=get(row, "pagamenti").lower() == "pagata",
-            paid_date=parse_date_value(get(row, "data pagamento")[:10], "auto") if get(row, "data pagamento") else None,
+            # ricevute: "Pagamenti"/"Data pagamento"; emesse: "Incassi"/"Data incasso"
+            paid=(get(row, "pagamenti") or get(row, "incassi")).lower() in ("pagata", "incassata"),
+            paid_date=_report_date(get(row, "data pagamento") or get(row, "data incasso")),
+            received_date=_report_date(get(row, "data ricezione") or get(row, "data invio")),
+            rejected=get(row, "stato").lower() == "scartata",
         ))
     return direction, out, errors
+
+
+def _report_date(raw: str) -> date | None:
+    from app.services.bank_import import parse_date_value
+
+    return parse_date_value(raw[:10], "auto") if raw else None
 
 
 def _import_report(session, res, name, content, forced_direction, default_payment_days, account_id, paid_before) -> None:
@@ -285,10 +296,18 @@ def _import_report(session, res, name, content, forced_direction, default_paymen
     res.errors.extend(f"{name}: {e}" for e in errors)
     for r in rows:
         key = hashlib.sha256(f"sdi:{r.sdi_id or (r.number, r.date, r.vat)}".encode()).hexdigest()
-        dup = session.scalar(select(Invoice).where(Invoice.file_hash == key)) or _existing(
-            session, direction, r.number, r.date, r.vat, r.doc_type
-        )
+        dup = session.scalar(select(Invoice).where(Invoice.file_hash == key))
+        if r.rejected:
+            # scartata dallo SdI: non è una fattura. Se era già stata caricata (stesso ID SdI) la tolgo.
+            if dup is not None and not any(it.transactions or it.payment_tx_id for it in dup.planned_items):
+                session.delete(dup)
+                session.flush()
+            res.rejected.append(r.number)
+            continue
+        dup = dup or _existing(session, direction, r.number, r.date, r.vat, r.doc_type)
         if dup is not None:
+            if dup.received_date is None and r.received_date is not None:
+                dup.received_date = r.received_date
             if dup.vat_cents is None and r.vat_cents is not None:
                 dup.vat_cents = r.vat_cents  # ricaricando il report si completano le fatture importate senza IVA
                 res.vat_completed += 1
@@ -302,7 +321,7 @@ def _import_report(session, res, name, content, forced_direction, default_paymen
         invoice = Invoice(
             direction=row_direction, doc_type=r.doc_type, number=r.number, date=r.date, counterparty=r.counterparty,
             counterparty_vat=r.vat, total_cents=r.total_cents, vat_cents=r.vat_cents, file_name=r.file_name or name,
-            file_hash=key,
+            file_hash=key, received_date=r.received_date,
         )
         session.add(invoice)
         session.flush()
@@ -340,6 +359,7 @@ class InvoiceImportResult:
     imported: list[Invoice] = field(default_factory=list)
     duplicates: list[str] = field(default_factory=list)
     vat_completed: int = 0  # fatture già presenti a cui è stata aggiunta l'IVA
+    rejected: list[str] = field(default_factory=list)  # righe "Scartata" dallo SdI, ignorate
     errors: list[str] = field(default_factory=list)
 
 

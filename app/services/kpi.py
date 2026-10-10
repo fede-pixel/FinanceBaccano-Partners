@@ -342,3 +342,46 @@ def vat_report(session: Session, year: int, frequency: str = "trimestrale", toda
         total_to_pay=sum(p.to_pay for p in out), credit_now=out[-1].carried_out if out else 0,
         missing_vat=missing, self_invoices_vat=self_vat,
     )
+
+
+# ---------- confronto con una chiusura provvisoria del commercialista ----------
+
+@dataclass
+class Provisional:
+    cutoff: date
+    revenue: int
+    costs_known: int  # fatture ricevute già arrivate alla data di chiusura
+    costs_all: int  # tutte le fatture con data documento entro la chiusura (anche arrivate dopo)
+    late: list[tuple[str, str, date, date | None, int]]  # (numero, fornitore, data doc, ricevuta il, imponibile)
+    personnel: int
+
+    @property
+    def margin_known(self) -> int:
+        return self.revenue - self.costs_known - self.personnel
+
+    @property
+    def margin_all(self) -> int:
+        return self.revenue - self.costs_all - self.personnel
+
+
+def provisional_view(session: Session, cutoff: date) -> Provisional:
+    """Risultato da inizio anno alla data di chiusura: come lo vedeva il commercialista (solo le fatture già arrivate)
+    e come risulta oggi (anche i costi con data entro la chiusura ma arrivati dopo)."""
+    start = date(cutoff.year, 1, 1)
+    invs = list(session.scalars(select(Invoice).where(Invoice.date >= start, Invoice.date <= cutoff)))
+    revenue = costs_all = costs_known = 0
+    late = []
+    for inv in invs:
+        amount, _ = _signed_taxable(inv)
+        if inv.direction == "attiva" and inv.doc_type not in SELF_INVOICE_TYPES:
+            revenue += amount
+            continue
+        costs_all += amount
+        if inv.received_date is None or inv.received_date <= cutoff:
+            costs_known += amount
+        else:
+            late.append((inv.number, inv.counterparty, inv.date, inv.received_date, amount))
+    personnel = sum(-a for (a,) in session.execute(select(Transaction.amount_cents).where(
+        Transaction.date >= start, Transaction.date <= cutoff, Transaction.category == PERSONNEL, Transaction.amount_cents < 0)))
+    late.sort(key=lambda x: -x[4])
+    return Provisional(cutoff, revenue, costs_known, costs_all, late, personnel)

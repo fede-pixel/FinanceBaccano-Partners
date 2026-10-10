@@ -10,8 +10,8 @@ router = APIRouter()
 
 
 @router.get("/kpi")
-def kpi_page(request: Request, mesi: int = 12, iva: str = "", session: Session = Depends(get_session)):
-    from datetime import date
+def kpi_page(request: Request, mesi: int = 12, iva: str = "", provvisorio: str = "", session: Session = Depends(get_session)):
+    from datetime import date, timedelta
 
     from app.services.util import get_setting, set_setting
 
@@ -22,6 +22,14 @@ def kpi_page(request: Request, mesi: int = 12, iva: str = "", session: Session =
     iva = get_setting(session, "vat_frequency") or "trimestrale"
     rep = kpi.build(session, mesi)
     vat = kpi.vat_report(session, date.today().year, iva)
+    from app.services.util import parse_date
+
+    if parse_date(provvisorio):
+        set_setting(session, "provisional_date", parse_date(provvisorio).isoformat())
+        session.commit()
+    saved = parse_date(get_setting(session, "provisional_date"))
+    cutoff = saved or (date.today().replace(day=1) - timedelta(days=1))
+    prov = kpi.provisional_view(session, cutoff)
     labels = [m.key for m in rep.months]
     eur = lambda vals: [v / 100 for v in vals]  # noqa: E731
     charts = {
@@ -49,7 +57,7 @@ def kpi_page(request: Request, mesi: int = 12, iva: str = "", session: Session =
         {"label": "IVA a credito (acquisti)", "values": [p.credit / 100 for p in vat.periods], "color": "--series-forecast"}]}
     charts["vat_balance"] = {"kind": "bar", "labels": [p.label for p in vat.periods], "title": "Posizione IVA", "series": [
         {"label": "Saldo del periodo (+ debito / − credito)", "values": [p.balance / 100 for p in vat.periods], "color": "--series-actual"}]}
-    return render(request, "kpi.html", rep=rep, charts=charts, mesi=mesi, vat=vat, today=date.today())
+    return render(request, "kpi.html", rep=rep, charts=charts, mesi=mesi, vat=vat, today=date.today(), prov=prov)
 
 
 @router.get("/investimenti")
