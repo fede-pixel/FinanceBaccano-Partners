@@ -31,6 +31,10 @@ def bootstrap(db_path=None) -> None:
         from app.services import categorize
 
         categorize.seed_rules(session)
+        from app.services.fatturapa import fix_self_invoices
+
+        if fix_self_invoices(session):
+            session.commit()
         from app.services.util import get_setting, set_setting
 
         if get_setting(session, "rules_version") != categorize.RULES_VERSION:

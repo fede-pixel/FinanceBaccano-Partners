@@ -136,13 +136,13 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
         if missing and inv.total_cents:
             r.invoices_without_vat += 1
             without_vat += 1
-        if inv.direction == "attiva":
+        if inv.direction == "attiva" and inv.doc_type not in SELF_INVOICE_TYPES:
             r.revenue += amount
             if missing and inv.date.year == today.year:
                 ytd_rev_novat += amount
                 ytd_rev_novat_n += 1
             clients[inv.counterparty] += amount
-        else:
+        else:  # fatture ricevute e autofatture (anche se caricate tra le emesse): costi
             r.external_costs += amount
             if inv.doc_type in SELF_INVOICE_TYPES:
                 r.self_invoice_costs += amount

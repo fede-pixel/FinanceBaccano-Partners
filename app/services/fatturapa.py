@@ -292,10 +292,15 @@ def _import_report(session, res, name, content, forced_direction, default_paymen
             if dup.vat_cents is None and r.vat_cents is not None:
                 dup.vat_cents = r.vat_cents  # ricaricando il report si completano le fatture importate senza IVA
                 res.vat_completed += 1
+            if r.doc_type in SELF_INVOICE_TYPES and direction == "passiva":
+                # la stessa autofattura compare anche tra le emesse (intestata a noi): qui c'è il vero fornitore
+                dup.direction, dup.counterparty, dup.counterparty_vat = "passiva", r.counterparty, r.vat
             res.duplicates.append(r.number)
             continue
+        # le autofatture (TD16-TD19…) sono sempre un costo, anche quando Aruba le elenca tra le fatture emesse
+        row_direction = "passiva" if r.doc_type in SELF_INVOICE_TYPES else direction
         invoice = Invoice(
-            direction=direction, doc_type=r.doc_type, number=r.number, date=r.date, counterparty=r.counterparty,
+            direction=row_direction, doc_type=r.doc_type, number=r.number, date=r.date, counterparty=r.counterparty,
             counterparty_vat=r.vat, total_cents=r.total_cents, vat_cents=r.vat_cents, file_name=r.file_name or name,
             file_hash=key,
         )
@@ -399,6 +404,8 @@ def import_invoices(
                         "oppure scegli la direzione nell'import."
                     )
                     continue
+                if inv.doc_type in SELF_INVOICE_TYPES:
+                    direction = "passiva"  # autofattura: costo verso il fornitore (estero), anche se emessa da noi
                 counterparty = inv.customer_name if direction == "attiva" else inv.supplier_name
                 cp_vat = inv.customer_vat if direction == "attiva" else inv.supplier_vat
                 old = _existing(session, direction, inv.number, inv.date, cp_vat, inv.doc_type)
@@ -456,3 +463,17 @@ def import_invoices(
                 res.imported.append(invoice)
     session.commit()
     return res
+
+
+def fix_self_invoices(session: Session) -> int:
+    """Correzione dei dati già importati: le autofatture caricate come "emesse" diventano costi (passive).
+    Le loro eventuali scadenze senza movimenti vengono tolte (il pagamento vero è al fornitore estero)."""
+    n = 0
+    for inv in session.scalars(select(Invoice).where(Invoice.doc_type.in_(SELF_INVOICE_TYPES))):
+        if inv.direction != "passiva":
+            inv.direction = "passiva"
+            n += 1
+        for it in list(inv.planned_items):
+            if not it.transactions and not it.payment_tx_id:
+                session.delete(it)
+    return n

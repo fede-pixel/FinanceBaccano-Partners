@@ -116,3 +116,44 @@ def test_reimport_completes_missing_vat(session):
     assert not res.imported and res.vat_completed == 1
     assert inv.vat_cents == 22000 and inv.taxable_cents == 100000
     assert kpi.build(session, 12, date(2026, 10, 10)).ytd_revenue == 100000
+
+
+def _report(header_party, rows):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Numero", "Nome file", "ID SdI", "Data ricezione", "Data documento", "Tipo documento", header_party, "P.IVA",
+               "Codice Fiscale", "Metodo di pagamento", "Totale imponibile", "Totale IVA", "Totale documento", "Netto a pagare",
+               "Pagamenti", "Data pagamento", "Stato"])
+    for r in rows:
+        ws.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_self_invoices_in_both_reports_are_costs(session):
+    """Aruba elenca le autofatture TD17 sia tra le emesse (intestate a noi) sia tra le ricevute, con lo stesso ID SdI."""
+    from app.services import kpi
+    from app.services.fatturapa import fix_self_invoices
+
+    emesse = _report("Cliente", [
+        ["FPR 1/26", "a.xml", "5001", "", date(2026, 9, 1), "Fattura - TD01", "DMG ANALYTICS", "111", "", "", 1000, 220, 1220, 1220, "", None, ""],
+        ["AF01 119/26", "b.xml", "5002", "", date(2026, 6, 30), "Integrazione/autofattura per acquisto servizi dall'estero - TD17",
+         "Baccano & Partners", "999", "", "", 74.43, 16.37, 90.8, 90.8, "", None, ""],
+    ])
+    ricevute = _report("Fornitore", [
+        ["AF01 119/26", "b.xml", "5002", "", date(2026, 6, 30), "Integrazione/autofattura per acquisto servizi dall'estero - TD17",
+         "ANTHROPIC IRELAND LIMITED", "4276970QH", "", "MP05 - Bonifico", 74.43, 16.37, 90.8, 90.8, "Non pagata", None, ""],
+    ])
+    import_invoices(session, [("ReportFattureEmesse.xlsx", emesse)], company_vat="")
+    import_invoices(session, [("ReportFattureRicevute.xlsx", ricevute)], company_vat="")
+    session.commit()
+    af = session.query(Invoice).filter(Invoice.doc_type == "TD17").one()
+    assert af.direction == "passiva" and af.counterparty == "ANTHROPIC IRELAND LIMITED" and not af.planned_items
+    rep = kpi.build(session, 12, date(2026, 10, 10))
+    assert rep.ytd_revenue == 100000  # solo la fattura vera, imponibile
+    assert rep.recon["self_costs"] == 7443 and rep.recon["aruba_like"] == 100000
+    # dati vecchi: autofattura salvata come emessa -> corretta all'avvio
+    af.direction = "attiva"
+    session.commit()
+    assert fix_self_invoices(session) == 1 and af.direction == "passiva"
