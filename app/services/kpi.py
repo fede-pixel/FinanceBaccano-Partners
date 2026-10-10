@@ -76,6 +76,7 @@ class KPIReport:
     top_clients: list[tuple[str, int, float]] = field(default_factory=list)  # (cliente, ricavi 12 mesi, quota)
     invoices_without_vat: int = 0
     coverage_start: date | None = None
+    recon: dict = field(default_factory=dict)  # confronto con il "fatturato attivo − passivo" di Aruba (anno in corso)
     ytd_revenue_without_vat: int = 0  # parte dei ricavi dell'anno presa da fatture senza IVA nota (quindi IVA compresa)
     ytd_revenue_invoices_without_vat: int = 0
 
@@ -111,7 +112,8 @@ def _paid_days(statuses, direction: str, since: date) -> float | None:
 
 def build(session: Session, months: int = 12, today: date | None = None) -> KPIReport:
     today = today or date.today()
-    first = add_months(_month_start(today), -(months - 1))
+    shown_from = add_months(_month_start(today), -(months - 1))
+    first = min(shown_from, date(today.year, 1, 1))  # i totali "dell'anno" partono sempre da gennaio
     rows: list[Month] = []
     m = first
     while m <= today:
@@ -176,6 +178,17 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
     balance_today = sum(c.at(today) for c in calcs.values()) if calcs else 0
 
     year_rows = [r for r in rows if r.start.year == today.year]
+    recon = {
+        "revenue": sum(r.revenue for r in year_rows),
+        "costs": sum(r.external_costs for r in year_rows),
+        "self_costs": sum(r.self_invoice_costs for r in year_rows),
+        "personnel": sum(r.personnel for r in year_rows),
+    }
+    year_inv = list(session.scalars(select(Invoice).where(Invoice.date >= date(today.year, 1, 1), Invoice.date <= today)))
+    for direction, key in (("attiva", "rev"), ("passiva", "cost")):
+        recon[f"{key}_novat"] = sum(1 for i in year_inv if i.direction == direction and i.vat_cents is None and i.total_cents)
+        recon[f"{key}_zero"] = sum(1 for i in year_inv if i.direction == direction and not i.total_cents)
+    recon["aruba_like"] = recon["revenue"] - (recon["costs"] - recon["self_costs"])
     ytd_revenue = sum(r.revenue for r in year_rows)
     ytd_ebitda = sum(r.ebitda for r in year_rows)
     complete = [r for r in rows if r.end < _month_start(today)]
@@ -192,7 +205,8 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
     total_clients = sum(v for v in clients.values() if v > 0)
     top = sorted(((n, v, v / total_clients if total_clients else 0) for n, v in clients.items() if v > 0), key=lambda x: -x[1])[:5]
     return KPIReport(
-        months=rows,
+        months=[r for r in rows if r.start >= shown_from],
+        recon=recon,
         ytd_revenue=ytd_revenue,
         ytd_ebitda=ytd_ebitda,
         ytd_margin=ytd_ebitda / ytd_revenue if ytd_revenue > 0 else None,

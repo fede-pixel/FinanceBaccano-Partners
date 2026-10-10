@@ -103,3 +103,13 @@ def test_cash_split_and_self_invoices(session):
     sep = next(m for m in kpi.build(session, 12, TODAY).months if m.key == "2026-09")
     assert sep.self_invoice_costs == 10_000 and sep.external_costs == 1_010_000
     assert sep.cash_in_invoices == 3_000_000 and sep.cash_out_invoices == 0
+
+
+def test_year_totals_do_not_depend_on_window(session):
+    _setup(session)
+    six, twelve = kpi.build(session, 6, TODAY), kpi.build(session, 12, TODAY)
+    assert len(six.months) == 6 and len(twelve.months) == 12
+    assert six.ytd_revenue == twelve.ytd_revenue == 6 * 3_000_000 - 100_000
+    r = six.recon
+    assert r["aruba_like"] == r["revenue"] - (r["costs"] - r["self_costs"])
+    assert six.ytd_ebitda == r["revenue"] - r["costs"] - r["personnel"]

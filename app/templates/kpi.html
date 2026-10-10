@@ -38,6 +38,28 @@
     <div class="sub">dalla data fattura al pagamento verificato</div></div>
 </div>
 
+{% set r = rep.recon %}
+<details class="card" open>
+  <summary><strong>Confronto con Aruba (anno in corso)</strong> — da "fatturato attivo − passivo" all'EBITDA</summary>
+  <table class="small" style="max-width:720px;margin-top:8px">
+    <tbody>
+      <tr><td>Ricavi: imponibile fatture emesse (= fatturato attivo Aruba)</td><td class="num">{{ r.revenue|eur }}</td></tr>
+      <tr><td>− Costi: imponibile fatture ricevute <em>senza</em> autofatture (= fatturato passivo Aruba)</td><td class="num">{{ (r.self_costs - r.costs)|eur_sign }}</td></tr>
+      <tr><td><strong>= Differenza come su Aruba</strong></td><td class="num"><strong>{{ r.aruba_like|eur_sign }}</strong></td></tr>
+      <tr><td>− Autofatture servizi esteri (TD17/TD18: Google, AWS, Anthropic…), costi veri che Aruba non conta</td><td class="num">{{ (-r.self_costs)|eur_sign }}</td></tr>
+      <tr><td>− Personale (stipendi pagati dalla banca)</td><td class="num">{{ (-r.personnel)|eur_sign }}</td></tr>
+      <tr><td><strong>= EBITDA stimato</strong></td><td class="num"><strong>{{ rep.ytd_ebitda|eur_sign }}</strong></td></tr>
+    </tbody>
+  </table>
+  <p class="small muted" style="margin-top:6px">Se la "differenza come su Aruba" non coincide con quella che vedi su Aruba, le cause possibili sono qui sotto. Le fatture ancora da incassare o da pagare non c'entrano: entrambi i conti sono per data fattura, non per pagamento.</p>
+  <ul class="note-list small">
+    {% if r.rev_novat or r.cost_novat %}<li class="neg"><strong>Fatture senza IVA indicata</strong>: {{ r.rev_novat }} emesse e {{ r.cost_novat }} ricevute contano IVA compresa. Ricaricale da Fatture (Aruba) per correggere.</li>{% endif %}
+    {% if r.rev_zero or r.cost_zero %}<li><strong>Fatture con importo zero</strong>: {{ r.rev_zero }} emesse e {{ r.cost_zero }} ricevute (alcune arrivano dal report di Aruba senza totale: caricane gli XML).</li>{% endif %}
+    <li><strong>Fatture mancanti</strong>: carica i report di Aruba (emesse e ricevute) aggiornati a oggi; le fatture ricevute o emesse dopo l'ultimo caricamento non sono in app.</li>
+    <li><strong>Stesso periodo</strong>: qui conta l'anno in corso fino a oggi, per data del documento.</li>
+  </ul>
+</details>
+
 <div class="grid grid-2">
   <div class="card"><h2>Ricavi e costi</h2>
     {{ chart('c-economics', charts.economics, [('Ricavi', '--series-actual', 'bar'), ('Costi fornitori', '--series-forecast', 'bar'), ('Personale', '--series-3', 'bar')]) }}</div>
