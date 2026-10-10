@@ -126,3 +126,30 @@ def test_recon_gross_matches_aruba_list(session):
     ricevute_lista = r["costs_gross"] + r["self_gross"]
     assert emesse_lista - ricevute_lista == r["diff_gross"] == 6 * 3_660_000 - 122_000 - 6 * 1_220_000
     assert r["net_vat"] == r["diff_gross"] - r["aruba_like"] == 6 * 660_000 - 22_000 - 6 * 220_000
+
+
+def test_vat_position_with_carry_forward(session):
+    """Vendi al 10%, compri al 22%: nel T1 si va a credito, il credito si scala dal T2."""
+    def inv(n, direction, d, taxable, rate, tipo="TD01"):
+        vat = taxable * rate // 100
+        session.add(Invoice(direction=direction, doc_type=tipo, number=n, date=d, counterparty="X", total_cents=taxable + vat,
+                            vat_cents=vat, file_name="x", file_hash=f"v{n}"))
+
+    inv("E1", "attiva", date(2026, 2, 10), 10_000_000, 10)    # debito 10.000
+    inv("R1", "passiva", date(2026, 3, 5), 6_000_000, 22)     # credito 13.200
+    inv("E2", "attiva", date(2026, 5, 10), 10_000_000, 10)    # debito 10.000
+    inv("R2", "passiva", date(2026, 5, 12), 1_000_000, 22)    # credito 2.200
+    inv("NC", "attiva", date(2026, 6, 1), 1_000_000, 10, "TD04")  # nota di credito: -1.000 di debito
+    inv("AF", "passiva", date(2026, 6, 30), 500_000, 22, "TD17")  # reverse charge: si annulla
+    session.commit()
+    rep = kpi.vat_report(session, 2026, "trimestrale", TODAY)
+    t1, t2, t3 = rep.periods[:3]
+    assert (t1.debit, t1.credit, t1.to_pay, t1.carried_out) == (1_000_000, 1_320_000, 0, 320_000)
+    assert (t2.debit, t2.credit, t2.carried_in, t2.to_pay) == (900_000, 220_000, 320_000, 360_000)
+    assert t2.due == date(2026, 8, 20) and t3.to_pay == 0
+    assert len(rep.periods) == 4  # T4 iniziato (ottobre)
+    assert rep.self_invoices_vat == 110_000 and rep.total_to_pay == 360_000
+    monthly = kpi.vat_report(session, 2026, "mensile", TODAY)
+    feb = monthly.periods[1]
+    assert feb.to_pay == 1_000_000 and feb.due == date(2026, 3, 16)
+    assert len(monthly.periods) == 10

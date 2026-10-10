@@ -87,6 +87,41 @@
   </div>
 </div>
 
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+    <h2 style="margin:0">IVA: a debito o a credito? ({{ today.year }})</h2>
+    <form method="get" class="toolbar"><input type="hidden" name="mesi" value="{{ mesi }}">
+      <select name="iva" onchange="this.form.submit()" aria-label="Periodicità della liquidazione IVA">
+        <option value="trimestrale" {{ 'selected' if vat.frequency == 'trimestrale' }}>Liquidazione trimestrale</option>
+        <option value="mensile" {{ 'selected' if vat.frequency == 'mensile' }}>Liquidazione mensile</option>
+      </select></form>
+  </div>
+  {% if vat.missing_vat %}<div class="alert warn small" style="margin-top:8px">{{ vat.missing_vat }} fatture non hanno l'IVA indicata e non sono conteggiate qui: ricarica i report di Aruba (emesse e ricevute) da Fatture (Aruba).</div>{% endif %}
+  <div class="kpis" style="margin-top:10px">
+    <div class="kpi"><div class="label">IVA a debito (sulle vendite)</div><div class="value">{{ vat.total_debit|eur }}</div><div class="sub">dall'inizio dell'anno</div></div>
+    <div class="kpi"><div class="label">IVA a credito (sugli acquisti)</div><div class="value">{{ vat.total_credit|eur }}</div><div class="sub">dall'inizio dell'anno</div></div>
+    <div class="kpi"><div class="label">Da versare nell'anno (stima)</div><div class="value">{{ vat.total_to_pay|eur }}</div><div class="sub">somma dei periodi a debito</div></div>
+    <div class="kpi"><div class="label">Posizione attuale</div>
+      {% if vat.periods and vat.periods[-1].to_pay %}<div class="value neg">debito {{ vat.periods[-1].to_pay|eur }}</div><div class="sub">{{ vat.periods[-1].label }}, da versare entro il {{ vat.periods[-1].due|d }}</div>
+      {% else %}<div class="value pos">credito {{ vat.credit_now|eur }}</div><div class="sub">si scala dai prossimi periodi</div>{% endif %}</div>
+  </div>
+  <div class="grid grid-2">
+    <div>{{ chart('c-vat', charts.vat, [('IVA a debito (vendite)', '--series-actual', 'bar'), ('IVA a credito (acquisti)', '--series-forecast', 'bar')], short=true) }}</div>
+    <div>{{ chart('c-vat-bal', charts.vat_balance, short=true) }}<p class="small muted">Sopra lo zero il periodo è a debito, sotto è a credito.</p></div>
+  </div>
+  <div class="table-wrap"><table class="small">
+    <thead><tr><th>Periodo</th><th class="num">IVA a debito</th><th class="num">IVA a credito</th><th class="num">Saldo del periodo</th><th class="num">Credito riportato</th><th class="num">Da versare</th><th class="num">Credito che resta</th><th>Scadenza F24</th></tr></thead>
+    <tbody>{% for p in vat.periods %}
+      <tr><td>{{ p.label }}{% if p.missing_vat %} <span class="badge warn" title="Fatture senza IVA indicata">{{ p.missing_vat }}</span>{% endif %}</td>
+        <td class="num">{{ p.debit|eur }}</td><td class="num">{{ p.credit|eur }}</td><td class="num">{{ p.balance|eur_sign }}</td>
+        <td class="num">{{ p.carried_in|eur if p.carried_in else '' }}</td><td class="num {{ 'neg' if p.to_pay }}">{{ p.to_pay|eur if p.to_pay else '—' }}</td>
+        <td class="num {{ 'pos' if p.carried_out }}">{{ p.carried_out|eur if p.carried_out else '' }}</td>
+        <td>{{ p.due|d if p.to_pay else '' }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  <p class="small muted">Stima dalle fatture per data documento: IVA delle fatture emesse − IVA delle fatture ricevute − credito del periodo precedente. Le autofatture estere (reverse charge, {{ vat.self_invoices_vat|eur }} di IVA) sono a debito e a credito insieme e si annullano. Non sono considerati: acconto IVA di dicembre, interessi dell'1% per chi liquida trimestralmente, IVA indetraibile (auto, ristoranti…), split payment, esigibilità differita e IVA sulle fatture senza fattura elettronica. La liquidazione ufficiale la fa il commercialista: usa questi numeri per prevedere F24 e crediti.</p>
+</div>
+
 <details class="card">
   <summary>Tabella dati mese per mese</summary>
   <div class="table-wrap"><table class="small">

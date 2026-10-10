@@ -235,3 +235,98 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
         ytd_revenue_invoices_without_vat=ytd_rev_novat_n,
         coverage_start=invoice_match.coverage(session).start,
     )
+
+
+# ---------- IVA ----------
+
+@dataclass
+class VatPeriod:
+    key: str  # 2026-03 oppure 2026-T1
+    label: str
+    debit: int = 0  # IVA sulle fatture emesse
+    credit: int = 0  # IVA sulle fatture ricevute
+    carried_in: int = 0  # credito del periodo precedente
+    to_pay: int = 0  # da versare con F24
+    carried_out: int = 0  # credito che passa al periodo dopo
+    due: date | None = None  # scadenza del versamento
+    missing_vat: int = 0  # fatture del periodo senza IVA nota
+
+    @property
+    def balance(self) -> int:
+        """Saldo del solo periodo: positivo = debito, negativo = credito."""
+        return self.debit - self.credit
+
+
+@dataclass
+class VatReport:
+    periods: list[VatPeriod]
+    frequency: str  # mensile | trimestrale
+    total_debit: int
+    total_credit: int
+    total_to_pay: int
+    credit_now: int  # credito IVA ancora da usare
+    missing_vat: int
+    self_invoices_vat: int  # IVA delle autofatture (reverse charge: a debito e a credito, si annulla)
+
+
+MONTHS_SHORT = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"]
+
+
+def vat_report(session: Session, year: int, frequency: str = "trimestrale", today: date | None = None) -> VatReport:
+    """Liquidazione IVA stimata dalle fatture (per data documento). Ogni periodo: IVA a debito − IVA a credito − credito
+    riportato; se positivo si versa (entro il 16 del mese dopo, o del secondo mese dopo il trimestre), se negativo il
+    credito passa al periodo successivo. Non considera acconto di dicembre, interessi dell'1% trimestrale, IVA indetraibile
+    (es. auto, ristoranti), split payment ed esigibilità differita: è una stima per la pianificazione, non la liquidazione."""
+    today = today or date.today()
+    quarterly = frequency == "trimestrale"
+    keys = [f"{year}-T{q}" for q in range(1, 5)] if quarterly else [f"{year}-{m:02d}" for m in range(1, 13)]
+    periods = {k: VatPeriod(k, (f"{k[-2:]} {year}" if quarterly else f"{MONTHS_SHORT[int(k[-2:]) - 1]} {year}")) for k in keys}
+    self_vat = missing = 0
+    q = select(Invoice).where(Invoice.date >= date(year, 1, 1), Invoice.date <= date(year, 12, 31))
+    for inv in session.scalars(q):
+        key = f"{year}-T{(inv.date.month - 1) // 3 + 1}" if quarterly else f"{year}-{inv.date.month:02d}"
+        p = periods[key]
+        if inv.vat_cents is None:
+            if inv.total_cents:
+                p.missing_vat += 1
+                missing += 1
+            continue
+        vat = abs(inv.vat_cents) * (-1 if inv.doc_type in CREDIT_NOTE_TYPES else 1)
+        if inv.doc_type in SELF_INVOICE_TYPES:
+            self_vat += vat  # reverse charge: stessa IVA a debito e a credito
+        elif inv.direction == "attiva":
+            p.debit += vat
+        else:
+            p.credit += vat
+    carry = 0
+    out = []
+    for k in keys:
+        p = periods[k]
+        p.carried_in = carry
+        net = p.debit - p.credit - carry
+        if net > 0:
+            p.to_pay, carry = net, 0
+        else:
+            p.to_pay, carry = 0, -net
+        p.carried_out = carry
+        if quarterly:
+            qn = int(k[-1])
+            # T1 16/5, T2 20/8, T3 16/11, T4 con la dichiarazione annuale (16/3 dell'anno dopo)
+            p.due = {1: date(year, 5, 16), 2: date(year, 8, 20), 3: date(year, 11, 16), 4: date(year + 1, 3, 16)}[qn]
+            first_month = qn * 3 - 2
+            last_month = qn * 3
+        else:
+            m = int(k[-2:])
+            p.due = date(year + (m == 12), m % 12 + 1, 16)
+            first_month = last_month = m
+        if date(year, first_month, 1) > today:
+            break  # periodi futuri: non ancora iniziati
+        if date(year, first_month, 1) <= today < add_months(date(year, last_month, 1), 1):
+            p.label += " (in corso)"
+        out.append(p)
+    return VatReport(
+        periods=out, frequency="trimestrale" if quarterly else "mensile",
+        total_debit=sum(p.debit for p in out), total_credit=sum(p.credit for p in out),
+        total_to_pay=sum(p.to_pay for p in out), credit_now=out[-1].carried_out if out else 0,
+        missing_vat=missing, self_invoices_vat=self_vat,
+    )

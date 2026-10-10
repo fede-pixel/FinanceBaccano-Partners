@@ -130,6 +130,14 @@ La pagina **KPI economici** mostra mese per mese (6, 12 o 24 mesi):
 
 L'EBITDA è stimato come Ricavi − Costi fornitori (incluse le autofatture dei servizi esteri) − stipendi pagati: è una misura gestionale, quella di bilancio la dà il commercialista. Le fatture importate prima dell'aggiornamento non hanno l'IVA separata: ricaricando una volta i report di Aruba (o gli XML) l'app la completa senza creare doppioni.
 
+### IVA: a debito o a credito
+
+Nella stessa pagina, il riquadro **IVA** stima la liquidazione periodo per periodo (mensile o trimestrale, a scelta):
+- IVA sulle fatture emesse (a debito) e IVA sulle fatture ricevute (a credito);
+- il credito che passa al periodo successivo, l'importo da versare con F24 e la scadenza.
+
+Chi fattura al 10% e compra al 22% vede subito quando è a credito e quando a debito. Le autofatture estere (reverse charge) si annullano. È una stima per pianificare: la liquidazione ufficiale resta del commercialista (acconto di dicembre, IVA indetraibile, interessi trimestrali e simili non sono considerati).
+
 ## Capacità di investimento
 
 La pagina **Capacità di investimento** stima quanto si può investire nei prossimi 3, 6 o 12 mesi senza scendere sotto una riserva di sicurezza (N mesi di uscite medie, almeno la soglia minima):

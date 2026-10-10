@@ -132,7 +132,8 @@ TOOLS = [
     },
     {
         "name": "kpi_economici",
-        "description": "KPI economici e finanziari mese per mese: ricavi e costi da fatture (netto IVA), personale, EBITDA "
+        "description": "KPI economici e finanziari mese per mese e posizione IVA (a debito/credito per periodo, F24 stimati): "
+                       "ricavi e costi da fatture (netto IVA), personale, EBITDA "
                        "stimato e margine, entrate/uscite di cassa, liquidità a fine mese, autonomia di cassa, crediti e debiti "
                        "aperti, DSO/DPO, principali clienti.",
         "input_schema": {
@@ -354,7 +355,13 @@ def tool_kpi(session: Session, mesi: int) -> dict:
 
     rep = kpi.build(session, mesi if mesi in (6, 12, 24) else 12)
     pc = lambda v: None if v is None else f"{v * 100:.1f}%"  # noqa: E731
+    vat = kpi.vat_report(session, date.today().year, get_setting(session, "vat_frequency") or "trimestrale")
     return {
+        "iva": {"liquidazione": vat.frequency, "a_debito_anno": _eur(vat.total_debit), "a_credito_anno": _eur(vat.total_credit),
+                "da_versare_anno_stima": _eur(vat.total_to_pay), "credito_residuo": _eur(vat.credit_now),
+                "fatture_senza_iva_nota": vat.missing_vat,
+                "periodi": [{"periodo": p.label, "debito": _eur(p.debit), "credito": _eur(p.credit), "da_versare": _eur(p.to_pay),
+                             "credito_che_resta": _eur(p.carried_out), "scadenza": p.due and p.due.isoformat()} for p in vat.periods]},
         "nota": "EBITDA stimato = ricavi fatturati − costi fatturati − stipendi pagati; misura gestionale, non di bilancio",
         "anno_in_corso": {"ricavi": _eur(rep.ytd_revenue), "ebitda": _eur(rep.ytd_ebitda), "margine": pc(rep.ytd_margin),
                           "flusso_di_cassa": _eur(rep.ytd_cash)},
