@@ -111,6 +111,13 @@ Il controllo parte da solo a ogni caricamento di movimenti o fatture e a ogni ap
 
 **Periodo coperto dai movimenti:** l'app indica da quale data tutti i conti hanno movimenti importati. Le fatture aperte con data anteriore sono segnate "prima dei movimenti", perché il pagamento potrebbe essere avvenuto prima e non è verificabile. Si possono filtrare e, se sono saldate, segnare tutte insieme (annullabile).
 
+Nelle viste da pagare/da incassare:
+- **selezione multipla**: spunta le fatture (o "Seleziona tutte" e togli quelle ancora aperte) e segnale saldate insieme, annullabile;
+- **Pagamento parziale**: registra la parte pagata, la fattura resta aperta per il residuo;
+- **Perché non è abbinata?**: mostra i movimenti con il nome della controparte (e importo diverso) o con lo stesso importo (senza il nome), oppure segnala che non c'è nessun movimento compatibile (pagata da un conto non caricato, in contanti…).
+
+Le banche spesso troncano il nome del beneficiario ("RENOVATIO SNC DI B"): per le aziende basta la prima parola distintiva della ragione sociale.
+
 Ogni vista si scarica in Excel. "Segna pagata" serve per i pagamenti da conti non caricati in app.
 
 ## Analisi spese

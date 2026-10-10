@@ -40,18 +40,46 @@ def _tokens(text: str) -> list[str]:
     return re.findall(r"[a-z0-9àèéìòù]+", (text or "").lower())
 
 
+_LEGAL_FORM = re.compile(r"\b(s\.?r\.?l\.?s?|s\.?p\.?a|s\.?n\.?c|s\.?a\.?s|soc\.?|ltd|gmbh|limited|inc)\b", re.I)
+# parole troppo comuni nelle ragioni sociali per riconoscere da sole un'azienda
+_GENERIC = {
+    "logistica", "impianti", "costruzioni", "edilizia", "edile", "motors", "ceramica", "design", "consulting", "sistemi",
+    "tecnica", "tecnologie", "commerciale", "trasporti", "global", "italiana", "internazionale", "immobiliare", "studio",
+    "gruppo", "group", "service", "servizi", "general", "nuova", "centro", "ferramenta", "elettrica", "termoidraulica",
+}
+
+
+def _key_word(name: str) -> str | None:
+    """Per le aziende: la prima parola distintiva della ragione sociale (es. "RENOVATIO SNC DI…" -> "renovatio").
+    Le banche spesso troncano il nome del beneficiario: questa parola da sola basta a riconoscerlo."""
+    if not _LEGAL_FORM.search(name or ""):
+        return None
+    for w in _tokens(name):
+        if w in _STOP or w.isdigit() or len(w) < 3:
+            continue
+        return w if len(w) >= 6 and w not in _GENERIC else None
+    return None
+
+
 def _name_words(name: str) -> set[str]:
-    return {w for w in _tokens(name) if len(w) >= 3 and w not in _STOP and not w.isdigit()}
+    words = {w for w in _tokens(name) if len(w) >= 3 and w not in _STOP and not w.isdigit()}
+    if words and words <= _GENERIC:
+        # nome fatto solo di parole comuni ("AB LOGISTICA"): servono anche le sigle corte per riconoscerlo
+        words |= {w for w in _tokens(name) if len(w) == 2 and w not in _STOP and not w.isdigit()}
+    return words
 
 
-def _name_match(words: set[str], brand: str | None, tx_words: set[str], tx_brand: str | None) -> bool:
+def _name_match(words: set[str], brand: str | None, tx_words: set[str], tx_brand: str | None, key: str | None = None) -> bool:
     if brand and brand == tx_brand:
+        return True
+    if key and key in tx_words:
         return True
     return bool(words) and len(words & tx_words) >= min(2, len(words))
 
 
 def name_matches(counterparty: str, tx_text: str) -> bool:
-    return _name_match(_name_words(counterparty), merchant.brand_of(counterparty), set(_tokens(tx_text)), merchant.brand_of(tx_text))
+    return _name_match(_name_words(counterparty), merchant.brand_of(counterparty), set(_tokens(tx_text)),
+                       merchant.brand_of(tx_text), _key_word(counterparty))
 
 
 def number_matches(number: str, tx_text: str) -> bool:
@@ -201,19 +229,19 @@ def run(session: Session, apply: bool = True) -> MatchResult:
     for it in items:
         name = it.invoice.counterparty
         if name not in party:
-            party[name] = (_name_words(name), merchant.brand_of(name))
+            party[name] = (_name_words(name), merchant.brand_of(name), _key_word(name))
     by_word: dict[str, list[PlannedItem]] = defaultdict(list)
     by_brand: dict[str, list[PlannedItem]] = defaultdict(list)
     for it in items:
-        words, brand = party[it.invoice.counterparty]
+        words, brand, _ = party[it.invoice.counterparty]
         for w in words:
             by_word[w].append(it)
         if brand:
             by_brand[brand].append(it)
 
     def same_party(tx: Transaction, it: PlannedItem) -> bool:
-        words, brand = party[it.invoice.counterparty]
-        return _name_match(words, brand, tx_words[tx.id], tx_brand[tx.id])
+        words, brand, key = party[it.invoice.counterparty]
+        return _name_match(words, brand, tx_words[tx.id], tx_brand[tx.id], key)
     certain: list[tuple[float, Transaction, PlannedItem, str]] = []
     amount_only: dict[int, list[PlannedItem]] = {}
     for tx in txs:
@@ -286,14 +314,14 @@ def run(session: Session, apply: bool = True) -> MatchResult:
     # altrimenti (più fatture o più movimenti con lo stesso importo) proposta da confermare
     tx_by_id = {tx.id: tx for tx in txs}
     # controparti di tutte le fatture: se il movimento ne nomina un'altra, non è il pagamento di questa
-    all_parties = [(w, b) for w, b in (
-        (_name_words(n), merchant.brand_of(n)) for n in set(session.scalars(select(Invoice.counterparty)))
+    all_parties = [(w, b, k) for w, b, k in (
+        (_name_words(n), merchant.brand_of(n), _key_word(n)) for n in set(session.scalars(select(Invoice.counterparty)))
     ) if w or b]
     exact: dict[int, list[PlannedItem]] = {}
     for tx_id, cands in amount_only.items():
         if tx_id in used_tx or tx_by_id[tx_id].category in NOT_INVOICE:
             continue
-        if any(_name_match(w, b, tx_words[tx_id], tx_brand[tx_id]) for w, b in all_parties):
+        if any(_name_match(w, b, tx_words[tx_id], tx_brand[tx_id], k) for w, b, k in all_parties):
             continue
         a = abs(tx_by_id[tx_id].amount_cents)
         same = [it for it in cands if it.id not in used_it and a in (abs(it.amount_cents), abs(it.invoice.total_cents))]
@@ -339,7 +367,7 @@ def run(session: Session, apply: bool = True) -> MatchResult:
     for it in sorted(items, key=lambda i: i.invoice.date):
         if it.id in used_it:
             continue
-        words, brand = party[it.invoice.counterparty]
+        words, brand, _ = party[it.invoice.counterparty]
         pool = {t.id: t for w in words for t in by_tx_word.get(w, ())}
         if brand:
             pool.update((t.id, t) for t in by_tx_brand.get(brand, ()))
@@ -526,3 +554,98 @@ def mark_presumed(session: Session, statuses: list["InvoiceStatus"]) -> tuple[st
                 n += 1
     session.flush()
     return batch, n
+
+
+# ---------- azioni manuali ----------
+
+def mark_items_paid(session: Session, items: list[PlannedItem], paid_date: date | None) -> tuple[str, int]:
+    """Segna pagate a mano più scadenze insieme (lotto annullabile). Senza data si usa la scadenza di ciascuna."""
+    import uuid
+
+    batch = uuid.uuid4().hex[:10]
+    n = 0
+    for it in items:
+        if it.status != "previsto":
+            continue
+        it.status, it.settlement, it.match_batch = "pagato", "manuale", batch
+        it.paid_date = paid_date or min(it.due_date, date.today())
+        n += 1
+    session.flush()
+    return batch, n
+
+
+def partial_payment(session: Session, item: PlannedItem, amount_cents: int, paid_date: date) -> PlannedItem:
+    """Registra un pagamento parziale: la parte pagata diventa una voce saldata, la scadenza resta aperta per il resto."""
+    amount_cents = abs(amount_cents)
+    if not 0 < amount_cents < abs(item.amount_cents):
+        raise ValueError("L'importo pagato deve essere maggiore di zero e minore del residuo")
+    sign = 1 if item.amount_cents > 0 else -1
+    paid = PlannedItem(
+        title=f"{item.title} (pagamento parziale)", amount_cents=sign * amount_cents, due_date=paid_date,
+        account_id=item.account_id, counterparty=item.counterparty, category=item.category, source=item.source,
+        invoice_id=item.invoice_id, status="pagato", paid_date=paid_date, settlement="manuale",
+        notes="Pagamento parziale registrato a mano",
+    )
+    session.add(paid)
+    item.amount_cents -= sign * amount_cents
+    session.flush()
+    return paid
+
+
+@dataclass
+class Diagnosis:
+    by_name: list[tuple[Transaction, bool]]  # movimenti con il nome della controparte (True = già abbinato ad altro)
+    by_amount: list[tuple[Transaction, bool]]  # movimenti con lo stesso importo
+
+    @property
+    def summary(self) -> str:
+        if not self.by_name and not self.by_amount:
+            return ("Nessun movimento con questo nome né con questo importo: probabilmente pagata da un conto o una carta "
+                    "non caricati, in contanti, o con una descrizione diversa")
+        parts = []
+        if self.by_name:
+            parts.append(f"{len(self.by_name)} movimenti con il nome ma importo diverso")
+        if self.by_amount:
+            parts.append(f"{len(self.by_amount)} movimenti con lo stesso importo ma senza il nome")
+        return " · ".join(parts)
+
+
+def diagnose(session: Session, statuses: list["InvoiceStatus"]) -> dict[int, Diagnosis]:
+    """Per le fatture aperte: quali movimenti le somigliano e perché non sono stati abbinati."""
+    open_st = [s for s in statuses if s.state == "aperta"]
+    if not open_st:
+        return {}
+    txs = list(session.scalars(select(Transaction).where(Transaction.category != categorize.INTERNAL)))
+    words = {t.id: set(_tokens(f"{t.counterparty} {t.description}")) for t in txs}
+    brands = {t.id: merchant.brand_of(f"{t.counterparty} {t.description}") for t in txs}
+    group_paid = set(session.scalars(select(PlannedItem.payment_tx_id).where(PlannedItem.payment_tx_id.is_not(None))))
+    by_word: dict[str, list[Transaction]] = defaultdict(list)
+    by_amount: dict[int, list[Transaction]] = defaultdict(list)
+    for t in txs:
+        for w in words[t.id]:
+            by_word[w].append(t)
+        by_amount[abs(t.amount_cents)].append(t)
+    out = {}
+    for st in open_st:
+        inv = st.invoice
+        sign_out = inv.direction == "passiva"
+        lo, hi = inv.date - timedelta(days=ACCONTI_DAYS_BEFORE), inv.date + timedelta(days=DAYS_AFTER)
+        name_w, brand = _name_words(inv.counterparty), merchant.brand_of(inv.counterparty)
+        pool = {t.id: t for w in name_w for t in by_word.get(w, ())}
+        named = [t for t in pool.values() if lo <= t.date <= hi and (t.amount_cents < 0) == sign_out
+                 and _name_match(name_w, brand, words[t.id], brands[t.id], _key_word(inv.counterparty))]
+        if brand:
+            named += [t for t in txs if brands[t.id] == brand and t.id not in pool and lo <= t.date <= hi
+                      and (t.amount_cents < 0) == sign_out]
+        amounts = {abs(it.amount_cents) for it in st.items if it.status == "previsto"} | {abs(inv.total_cents)}
+        same_amount = [t for a in amounts for t in by_amount.get(a, ()) if lo <= t.date <= hi
+                       and (t.amount_cents < 0) == sign_out and t.id not in {x.id for x in named}]
+
+        def linked(t: Transaction) -> bool:
+            return bool(t.planned_item_id) or t.id in group_paid
+
+        out[inv.id] = Diagnosis(
+            by_name=[(t, linked(t)) for t in sorted(named, key=lambda t: t.date)][:8],
+            by_amount=[(t, linked(t)) for t in sorted(same_amount, key=lambda t: t.date)][:5],
+        )
+    return out

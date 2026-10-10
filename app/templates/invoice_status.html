@@ -91,16 +91,36 @@
   <p class="small muted">Fatture risultate pagate senza un movimento collegato: pagate con carta o in contanti secondo il report di Aruba, segnate "Pagata", oppure scadute prima della data indicata nell'import. Quando carichi i movimenti del periodo, l'app cerca il pagamento e le sposta tra le verificate.</p>
   {% endif %}
   {% if rows %}
+  {% if vista in ('pagare', 'incassare') %}
+  <form id="bulkform" method="post" action="/fatture/situazione/segna-selezionate" class="toolbar small"
+        data-confirm="Segnare come {{ 'incassate' if vista == 'incassare' else 'pagate' }} le fatture spuntate? Potrai annullare con un clic.">
+    <input type="hidden" name="vista" value="{{ vista }}">
+    <label class="check"><input type="checkbox" onclick="document.querySelectorAll('input[name=invoice_ids]').forEach(c => c.checked = this.checked)"> Seleziona tutte</label>
+    <span>Data {{ 'incasso' if vista == 'incassare' else 'pagamento' }}</span>
+    <input type="date" name="paid_date" title="Vuota = data di scadenza di ciascuna fattura">
+    <button class="small">Segna {{ 'incassate' if vista == 'incassare' else 'pagate' }} le selezionate</button>
+    <span class="muted">Spunta tutte e togli quelle ancora da saldare. Data vuota = scadenza di ciascuna.</span>
+  </form>
+  {% endif %}
   <div class="table-wrap"><table>
     <thead><tr>
+      {% if vista in ('pagare', 'incassare') %}<th></th>{% endif %}
       <th>Fattura</th><th>Controparte</th>
       {% if vista in ('pagare', 'incassare') %}<th>Scadenza</th><th class="num">Da saldare</th>{% else %}<th>Pagata il</th><th>Movimento</th><th class="num">Importo</th>{% endif %}
       <th></th></tr></thead>
     <tbody>
     {% for s in rows %}{% set inv = s.invoice %}
       <tr>
+        {% if vista in ('pagare', 'incassare') %}<td><input type="checkbox" name="invoice_ids" value="{{ inv.id }}" form="bulkform" aria-label="Seleziona fattura {{ inv.number }}"></td>{% endif %}
         <td style="white-space:nowrap">n. {{ inv.number }}<div class="small muted">{{ inv.date|d }} · {{ inv.doc_type }}{% if vista in ('presunte', 'pagate') %} · {{ 'ricevuta' if inv.direction == 'passiva' else 'emessa' }}{% endif %}</div></td>
-        <td>{{ inv.counterparty }}<div class="small muted">{{ inv.counterparty_vat }}</div></td>
+        <td>{{ inv.counterparty }}<div class="small muted">{{ inv.counterparty_vat }}</div>
+          {% set dg = diag.get(inv.id) %}
+          {% if dg %}<details class="small"><summary class="muted">Perché non è abbinata?</summary>
+            <div class="muted" style="margin:4px 0">{{ dg.summary }}</div>
+            {% for t, linked in dg.by_name %}<div>{{ t.date|d }} · {{ t.account.name }} · <strong>{{ t.amount_cents|eur_sign }}</strong>{% if linked %} <span class="badge plain">già abbinato</span>{% endif %}<div class="muted">{{ t.description[:80] }}</div></div>{% endfor %}
+            {% if dg.by_amount %}<div class="muted" style="margin-top:4px">Stesso importo, senza il nome:</div>
+            {% for t, linked in dg.by_amount %}<div>{{ t.date|d }} · {{ t.account.name }} · {{ t.amount_cents|eur_sign }}{% if linked %} <span class="badge plain">già abbinato</span>{% endif %}<div class="muted">{{ t.description[:80] }}</div></div>{% endfor %}{% endif %}
+          </details>{% endif %}</td>
         {% if vista in ('pagare', 'incassare') %}
         <td style="white-space:nowrap">{{ s.due|d }}
           {% if s.overdue_days > 0 %}<span class="badge crit">scaduta da {{ s.overdue_days }} gg</span>{% endif %}
@@ -111,7 +131,13 @@
           <form method="post" action="/fatture/situazione/segna" style="display:flex;gap:6px;margin-top:6px">
             <input type="hidden" name="item_ids" value="{{ s.items|selectattr('status', 'equalto', 'previsto')|map(attribute='id')|join(',') }}">
             <input type="hidden" name="back" value="/fatture/situazione?vista={{ vista }}">
-            <input type="date" name="paid_date" value="{{ today.isoformat() }}"><button class="small">OK</button></form></details></td>
+            <input type="date" name="paid_date" value="{{ today.isoformat() }}"><button class="small">OK</button></form></details>
+          {% set open_items = s.items|selectattr('status', 'equalto', 'previsto')|list %}
+          {% if open_items|length == 1 %}<details><summary class="small">Pagamento parziale</summary>
+          <form method="post" action="/fatture/situazione/parziale" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+            <input type="hidden" name="item_id" value="{{ open_items[0].id }}"><input type="hidden" name="vista" value="{{ vista }}">
+            <input name="amount" inputmode="decimal" placeholder="Importo pagato" style="width:110px" required>
+            <input type="date" name="paid_date" value="{{ today.isoformat() }}"><button class="small">OK</button></form></details>{% endif %}</td>
         {% else %}
         <td>{{ s.paid_date|d if s.paid_date else '—' }}
           {% if s.state == 'compensata' %}<div class="small muted">{{ s.items[0].notes }}</div>{% endif %}

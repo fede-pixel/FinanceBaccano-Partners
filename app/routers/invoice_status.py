@@ -76,8 +76,10 @@ def situation(request: Request, vista: str = "pagare", q: str = "", lotto: str =
         msg = f"{msg} · {auto}" if msg else auto
     last = get_setting(session, "last_match_batch").split("|")  # lotto|data e ora|descrizione dell'ultima azione in blocco
     last_batch = last[0] if invoice_match.batch_size(session, last[0]) else ""
+    rows = _rows(session, vista, q, lotto, bool(anteriori))
     return render(
-        request, "invoice_status.html", vista=vista, views=VIEWS, q=q, rows=_rows(session, vista, q, lotto, bool(anteriori)),
+        request, "invoice_status.html", vista=vista, views=VIEWS, q=q, rows=rows,
+        diag=invoice_match.diagnose(session, rows) if vista in ("pagare", "incassare") else {},
         proposals=result.proposals, msg=msg, lotto=lotto, anteriori=anteriori, cov=cov,
         last_batch=last_batch, last_batch_at=last[1] if len(last) > 1 else "",
         last_batch_label=last[2] if len(last) > 2 else "Conferma in blocco",
@@ -176,6 +178,46 @@ def mark(item_ids: str = Form(...), action: str = Form("pagata"), paid_date: str
         n += 1
     session.commit()
     return redirect(back, msg="Fattura riaperta" if action == "riapri" else "Fattura segnata come pagata")
+
+
+@router.post("/fatture/situazione/segna-selezionate")
+async def mark_selected(request: Request, session: Session = Depends(get_session)):
+    """Segna pagate/incassate le fatture spuntate (es. "tutte tranne una"), con lotto annullabile."""
+    from datetime import datetime
+
+    from app.models import Invoice
+
+    form = await request.form()
+    vista = form.get("vista", "pagare")
+    ids = [int(v) for v in form.getlist("invoice_ids") if str(v).isdigit()]
+    items = [it for i in ids if (inv := session.get(Invoice, i)) for it in inv.planned_items]
+    batch, n = invoice_match.mark_items_paid(session, items, parse_date(form.get("paid_date", "")))
+    if n:
+        label = f"{len(ids)} fatture segnate " + ("incassate" if vista == "incassare" else "pagate") + " a mano"
+        set_setting(session, "last_match_batch", f"{batch}|{datetime.now():%d/%m/%Y %H:%M}|{label}")
+    session.commit()
+    back = f"/fatture/situazione?vista={vista}"
+    if not n:
+        return redirect(back, err="Nessuna fattura selezionata")
+    return redirect(back, msg=f"{len(ids)} fatture segnate come saldate. Puoi annullare con un clic dal riquadro in alto.")
+
+
+@router.post("/fatture/situazione/parziale")
+def partial(item_id: int = Form(...), amount: str = Form(...), paid_date: str = Form(""), vista: str = Form("pagare"),
+            session: Session = Depends(get_session)):
+    from app.services.util import fmt_eur, parse_amount
+
+    it = session.get(PlannedItem, item_id)
+    cents = parse_amount(amount)
+    back = f"/fatture/situazione?vista={vista}"
+    if it is None or cents is None:
+        return redirect(back, err="Importo non valido")
+    try:
+        invoice_match.partial_payment(session, it, cents, parse_date(paid_date) or date.today())
+    except ValueError as exc:
+        return redirect(back, err=str(exc))
+    session.commit()
+    return redirect(back, msg=f"Pagamento parziale registrato: restano {fmt_eur(abs(it.amount_cents))} da saldare")
 
 
 @router.get("/fatture/situazione.xlsx")

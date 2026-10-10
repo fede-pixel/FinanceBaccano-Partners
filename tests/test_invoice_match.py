@@ -240,3 +240,52 @@ def test_invoices_before_imported_movements(client):
     with SessionLocal() as s:
         st = {x.invoice.number: x.state for x in im.invoice_statuses(s)}
         assert st == {"1": "aperta", "2": "aperta", "3": "aperta"}
+
+
+def test_mark_all_but_one_partial_payment_and_diagnosis(client):
+    from app.db import SessionLocal
+
+    with SessionLocal() as s:
+        acc = _acc(s)
+        gel = _inv(s, "319-FE", "IL GELSOMINO S.R.L.S", 8000, date(2026, 10, 1))
+        art = _inv(s, "000958/00/26", "ART - INCASSO DI POTENZA UMBERTO", 1153031, date(2026, 7, 31))
+        ren = _inv(s, "48", "RENOVATIO SNC DI BOEZIO E CIPRIANI", 600000, date(2026, 8, 7))
+        bri = _inv(s, "0124120010052", "BRICOMAN ITALIA S.R.L. SOCIETA' A SOCIO UNICO", 137318, date(2026, 4, 28))
+        # bonifico a Renovatio di importo diverso: la diagnosi lo deve mostrare
+        _tx(s, acc, date(2026, 8, 20), -550000, "BONIFICO SEPA A FAVORE DI RENOVATIO SNC DI BOEZIO E CIPRIANI")
+        s.commit()
+        ids = {"gel": gel.id, "art": art.id, "ren": ren.id, "bri": bri.id, "art_item": art.planned_items[0].id}
+    page = client.get("/fatture/situazione?vista=pagare")
+    assert "Perché non è abbinata?" in page.text and "1 movimenti con il nome ma importo diverso" in page.text
+    assert "Nessun movimento con questo nome" in page.text  # Bricoman: nessun movimento
+    assert "Segna pagate le selezionate" in page.text
+    # pagamento parziale: metà di ART
+    r = client.post("/fatture/situazione/parziale", data={"item_id": ids["art_item"], "amount": "5765,16", "paid_date": "2026-09-15"},
+                    follow_redirects=False)
+    assert "restano" in r.headers["location"]
+    # tutte tranne il Gelsomino (e ART, che resta aperta per il residuo)
+    r = client.post("/fatture/situazione/segna-selezionate",
+                    data={"vista": "pagare", "invoice_ids": [str(ids["ren"]), str(ids["bri"])]}, follow_redirects=False)
+    assert r.status_code == 303 and "segnate come saldate" in r.headers["location"].replace("+", " ").replace("%20", " ")
+    with SessionLocal() as s:
+        st = {x.invoice.id: x for x in im.invoice_statuses(s)}
+        assert st[ids["gel"]].state == "aperta"
+        assert st[ids["art"]].state == "aperta" and st[ids["art"]].open_cents == 576515 and st[ids["art"]].paid_cents == 576516
+        assert st[ids["ren"]].state == "pagata" and st[ids["bri"]].state == "pagata"
+        assert st[ids["bri"]].paid_date == date(2026, 4, 28)  # data vuota: la scadenza (qui = data fattura)
+        from app.services.util import get_setting
+
+        lotto = get_setting(s, "last_match_batch").split("|")[0]
+    assert "Annulla l&#39;operazione in blocco" in client.get("/fatture/situazione").text or "Annulla l'operazione in blocco" in client.get("/fatture/situazione").text
+    client.post("/fatture/situazione/annulla-lotto", data={"lotto": lotto})
+    with SessionLocal() as s:
+        st = {x.invoice.id: x.state for x in im.invoice_statuses(s)}
+        assert st[ids["ren"]] == "aperta" and st[ids["bri"]] == "aperta"
+
+
+def test_truncated_company_names():
+    assert im.name_matches("RENOVATIO SNC DI BOEZIO E CIPRIANI", "PAGAMENTO POS RENOVATIO SNC DI B ROMA")
+    assert im.name_matches("BRICOMAN ITALIA S.R.L. SOCIETA' A SOCIO UNICO", "POS BRICOMAN GUIDONIA")
+    assert im.name_matches("MONDATI E SELVA SRL", "BONIFICO A MONDATI E SE")
+    assert not im.name_matches("AB LOGISTICA srls", "TRASPORTI LOGISTICA ROSSI")  # parola generica
+    assert not im.name_matches("Ciancarella Alessio", "BONIFICO ALESSIO VERDI")  # persona: servono nome e cognome
