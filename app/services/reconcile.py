@@ -71,6 +71,9 @@ def match(session: Session, tx: Transaction, item: PlannedItem) -> None:
 def unmatch(session: Session, tx: Transaction) -> None:
     item = tx.planned_item
     tx.planned_item = None
+    if item and item.invoice_id and item.settlement == "movimento":
+        for other in list(item.transactions):  # acconti: si scollegano tutti insieme e la fattura torna aperta
+            other.planned_item = None
     if item and not item.transactions:
         item.status = "previsto"
         item.paid_date = None

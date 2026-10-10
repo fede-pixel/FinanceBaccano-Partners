@@ -28,12 +28,12 @@
     <tbody>
     {% for p in proposals %}
       <tr>
-        <td><div>{{ p.transaction.date|d }} · <span class="small">{{ p.transaction.account.name }}</span></div><div class="small muted">{{ p.transaction.description[:90] }}</div></td>
+        <td>{% for t in p.transactions %}<div>{{ t.date|d }} · <span class="small">{{ t.account.name }}</span>{% if p.transactions|length > 1 %} · {{ t.amount_cents|eur_sign }}{% endif %}</div><div class="small muted">{{ t.description[:90] }}</div>{% endfor %}</td>
         <td class="small">{% for it in p.items %}<div>{{ it.invoice.counterparty }} · n. {{ it.invoice.number }} del {{ it.invoice.date|d }} ({{ it.amount_cents|eur_sign }})</div>{% endfor %}</td>
         <td class="small">{{ p.reason }}</td>
-        <td>{{ amount(p.transaction.amount_cents) }}</td>
+        <td>{{ amount(p.total_cents) }}</td>
         <td class="actions"><form method="post" action="/fatture/situazione/abbina">
-          <input type="hidden" name="tx_id" value="{{ p.transaction.id }}">
+          <input type="hidden" name="tx_ids" value="{{ p.transactions|map(attribute='id')|join(',') }}">
           <input type="hidden" name="item_ids" value="{{ p.items|map(attribute='id')|join(',') }}">
           <button class="small">Conferma</button></form></td>
       </tr>
@@ -107,10 +107,10 @@
   <h3>Come funziona il controllo</h3>
   <p>Ogni volta che apri questa pagina o carichi movimenti o fatture, l'app cerca tra i movimenti bancari il pagamento di ogni fattura:</p>
   <ul>
-    <li><strong>Abbinamento automatico</strong> quando l'importo è lo stesso della fattura (o della rata) e nella descrizione del movimento c'è il nome del fornitore/cliente o il numero della fattura.</li>
+    <li><strong>Abbinamento automatico</strong> quando l'importo è esattamente lo stesso della fattura (o della rata). Se più fatture o più movimenti hanno lo stesso importo, vince quello con il nome del fornitore/cliente o il numero della fattura nella descrizione; altrimenti lo scegli tu.</li>
     <li><strong>Un bonifico per più fatture</strong> dello stesso fornitore: riconosciuto se la somma delle fatture è esattamente l'importo del bonifico.</li>
     <li><strong>Note di credito</strong> di pari importo di una fattura aperta dello stesso fornitore: le due si compensano.</li>
-    <li><strong>Da confermare</strong>: stesso importo e un solo candidato, ma senza nome o numero nella descrizione.</li>
+    <li><strong>Acconti</strong>: più pagamenti alla stessa controparte che sommati danno esattamente l'importo della fattura vengono proposti in <strong>Da confermare</strong>.</li>
   </ul>
   <p class="muted">Pagamenti parziali o con importi diversi dalla fattura (sconti, arrotondamenti, ritenute non indicate) non vengono abbinati da soli: usa "Segna pagata" oppure abbina il movimento da Riconciliazione.</p>
 </div>

@@ -60,7 +60,8 @@ def test_auto_match_and_statuses(session):
     t1 = _tx(session, acc, date(2026, 10, 3), -80200, "BONIFICO A FAVORE DI CIANCARELLA ALESSIO")
     t2 = _tx(session, acc, date(2026, 9, 28), -20993, "PAGAMENTO POS ZENZERO")
     t3 = _tx(session, acc, date(2026, 9, 2), 122000, "BONIFICO DA ALFA BETA SPA SALDO FATTURA 9")
-    _tx(session, acc, date(2026, 9, 5), -50000, "PRELIEVO")  # stesso importo di d ma nessuna prova
+    pr = _tx(session, acc, date(2026, 9, 5), -50000, "PRELIEVO ATM")  # stesso importo di d, ma è un prelievo
+    pr.category = "Prelievi contanti"
     _tx(session, acc, date(2026, 2, 1), -30000, "Bonifico Gamma srl fattura 88")
     res = im.run(session)
     assert res.matched == 4
@@ -70,8 +71,10 @@ def test_auto_match_and_statuses(session):
     assert _state(session, e).state == "pagata"  # verificata con il movimento
     st = _state(session, d)
     assert st.state == "aperta" and st.open_cents == 50000
-    # proposta solo importo (unico candidato, sopra i 50 €)
-    assert len(res.proposals) == 1 and res.proposals[0].items[0].invoice_id == d.id
+    assert not res.proposals and st.state == "aperta"
+    # importo identico al centesimo, senza nome: abbinamento automatico
+    t5 = _tx(session, acc, date(2026, 9, 6), -50000, "DISPOSIZIONE DI PAGAMENTO RIF 1234")
+    assert im.run(session).matched == 1 and _state(session, d).state == "pagata" and t5.planned_item_id
     # annullando l'abbinamento la fattura torna da pagare
     reconcile.unmatch(session, t1)
     assert _state(session, a).state == "aperta"
@@ -93,6 +96,52 @@ def test_one_transfer_for_many_invoices_and_credit_notes(session):
     assert _state(session, f).state == "compensata" and _state(session, n).state == "compensata"
     reconcile.unmatch(session, t)  # scollega tutte le fatture del bonifico
     assert _state(session, i1).state == "aperta" and _state(session, i2).state == "aperta"
+
+
+def test_same_amount_ambiguous_is_proposed(session):
+    acc = _acc(session)
+    _inv(session, "10", "Delta Srl", 12000, date(2026, 9, 1))
+    _inv(session, "20", "Epsilon Srl", 12000, date(2026, 9, 3))
+    t0 = _tx(session, acc, date(2026, 9, 20), -12000, "DISPOSIZIONE DI PAGAMENTO")
+    res = im.run(session)
+    assert res.matched == 0 and len(res.proposals) == 1 and "scegli tu" in res.proposals[0].reason
+    # il movimento con il nome vince; poi per l'altro resta un solo candidato e si abbina da solo
+    t = _tx(session, acc, date(2026, 9, 21), -12000, "BONIFICO A EPSILON SRL")
+    res = im.run(session)
+    assert res.matched == 2 and t.planned_item.invoice.number == "20" and t0.planned_item.invoice.number == "10"
+
+
+def test_acconti_are_proposed_not_automatic(client):
+    from app.db import SessionLocal
+
+    with SessionLocal() as s:
+        acc = _acc(s)
+        inv = _inv(s, "55", "Ditta Paolo Bucefalo", 231000, date(2026, 6, 30), due=date(2026, 7, 30))
+        a1 = _tx(s, acc, date(2026, 5, 10), -100000, "Bonifico a favore di Paolo Bucefalo acconto")
+        a2 = _tx(s, acc, date(2026, 6, 10), -81000, "Bonifico a favore di BUCEFALO PAOLO secondo acconto")
+        a3 = _tx(s, acc, date(2026, 7, 15), -50000, "Bonifico Bucefalo Paolo saldo")
+        _tx(s, acc, date(2026, 7, 16), -20000, "Bonifico Bucefalo Paolo altro lavoro")
+        res = im.run(s)
+        assert res.matched == 0
+        assert len(res.proposals) == 1
+        p = res.proposals[0]
+        assert {t.id for t in p.transactions} == {a1.id, a2.id, a3.id} and p.total_cents == -231000
+        assert "acconti" in p.reason
+        s.commit()
+        ids = ",".join(str(t.id) for t in p.transactions)
+        item_id, inv_id = inv.planned_items[0].id, inv.id
+    page = client.get("/fatture/situazione")
+    assert "3 acconti" in page.text
+    r = client.post("/fatture/situazione/abbina", data={"tx_ids": ids, "item_ids": str(item_id)}, follow_redirects=False)
+    assert r.status_code == 303
+    with SessionLocal() as s:
+        st = next(x for x in im.invoice_statuses(s) if x.invoice.id == inv_id)
+        assert st.state == "pagata" and len(st.transactions) == 3 and st.paid_date == date(2026, 7, 15)
+        # scollegando un acconto la fattura torna aperta e si scollegano tutti
+        reconcile.unmatch(s, st.transactions[0])
+        s.commit()
+        st = next(x for x in im.invoice_statuses(s) if x.invoice.id == inv_id)
+        assert st.state == "aperta" and not st.transactions
 
 
 def test_situation_page_and_export(client):

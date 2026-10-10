@@ -66,17 +66,27 @@ def situation(request: Request, vista: str = "pagare", q: str = "", session: Ses
     )
 
 
+def _ids(raw: str) -> list[int]:
+    return [int(i) for i in raw.split(",") if i.strip().isdigit()]
+
+
 @router.post("/fatture/situazione/abbina")
-def confirm(tx_id: int = Form(...), item_ids: str = Form(...), session: Session = Depends(get_session)):
-    tx = session.get(Transaction, tx_id)
-    items = [session.get(PlannedItem, int(i)) for i in item_ids.split(",") if i.strip().isdigit()]
-    if tx is None or not items or any(i is None for i in items):
+def confirm(tx_ids: str = Form(...), item_ids: str = Form(...), session: Session = Depends(get_session)):
+    txs = [session.get(Transaction, i) for i in _ids(tx_ids)]
+    items = [session.get(PlannedItem, i) for i in _ids(item_ids)]
+    if not txs or not items or any(x is None for x in txs + items):
         raise HTTPException(404, "Non trovato")
-    if tx.planned_item_id:
-        reconcile.unmatch(session, tx)
-    invoice_match.settle(session, tx, items)
+    for tx in txs:
+        if tx.planned_item_id:
+            reconcile.unmatch(session, tx)
+    if len(txs) > 1:
+        invoice_match.settle_installments(session, txs, items[0])
+        msg = f"Abbinato: fattura saldata da {len(txs)} acconti"
+    else:
+        invoice_match.settle(session, txs[0], items)
+        msg = f"Abbinato: {len(items)} fatture saldate dal movimento del {txs[0].date:%d/%m/%Y}"
     session.commit()
-    return redirect("/fatture/situazione?vista=pagate", msg=f"Abbinato: {len(items)} fatture saldate dal movimento del {tx.date:%d/%m/%Y}")
+    return redirect("/fatture/situazione?vista=pagate", msg=msg)
 
 
 @router.post("/fatture/situazione/scollega")

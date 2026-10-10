@@ -102,10 +102,10 @@ La pagina **Fatture da saldare** confronta le fatture con i movimenti bancari e 
 - **Pagate e incassate**: collegate al movimento bancario, con un clic per scollegare se l'abbinamento è sbagliato.
 
 Il controllo parte da solo a ogni caricamento di movimenti o fatture e a ogni apertura della pagina:
-- abbinamento automatico quando l'importo coincide (rata, netto a pagare o totale) e il movimento riporta il nome della controparte o il numero della fattura;
+- **importo identico** al centesimo (rata, netto a pagare o totale): abbinamento automatico. Se più fatture o più movimenti hanno lo stesso importo vince quello con il nome della controparte o il numero della fattura; altrimenti finisce in **Da confermare**. Prelievi, F24 e commissioni non vengono mai abbinati col solo importo, né i movimenti che nominano un altro fornitore;
 - un bonifico che paga più fatture dello stesso fornitore viene riconosciuto se la somma è esatta;
-- note di credito di pari importo compensano la fattura;
-- con il solo importo uguale l'abbinamento è proposto in **Da confermare**.
+- **acconti**: più pagamenti alla stessa controparte che sommati danno esattamente l'importo della fattura vengono proposti in **Da confermare** (conferma manuale);
+- note di credito di pari importo compensano la fattura.
 
 Ogni vista si scarica in Excel. "Segna pagata" serve per i pagamenti da conti non caricati in app.
 

@@ -2,11 +2,11 @@
 
 Per ogni scadenza di fattura non ancora collegata a un movimento cerca il pagamento (o l'incasso) tra i movimenti:
 - importo uguale alla scadenza (o al totale documento) e data compatibile con quella della fattura;
-- in più almeno una prova: il nome della controparte o il numero della fattura nella descrizione del movimento.
-Con importo + prova l'abbinamento è certo e viene fatto in automatico. Con il solo importo (unico candidato da
-entrambe le parti) viene proposto e lo confermi tu. Un bonifico che paga più fatture dello stesso fornitore viene
-riconosciuto se la somma delle fatture è esattamente l'importo del bonifico. Note di credito e fatture di pari
-importo dello stesso fornitore si compensano tra loro."""
+- con importo identico l'abbinamento è automatico; se più fatture o più movimenti hanno lo stesso importo vince quello
+  con il nome della controparte o il numero della fattura nella descrizione, altrimenti lo confermi tu.
+Un bonifico che paga più fatture dello stesso fornitore viene riconosciuto se la somma delle fatture è esattamente
+l'importo del bonifico. Più acconti alla stessa controparte che sommati danno esattamente l'importo della fattura
+vengono proposti da confermare a mano. Note di credito e fatture di pari importo dello stesso fornitore si compensano."""
 import itertools
 import re
 from collections import defaultdict
@@ -22,7 +22,10 @@ from app.services.fatturapa import CREDIT_NOTE_TYPES
 
 DAYS_BEFORE = 30  # pagamenti con carta: il movimento può precedere la data della fattura
 DAYS_AFTER = 365
-MIN_AMOUNT_ONLY = 5000  # sotto i 50 € il solo importo non basta a proporre un abbinamento
+ACCONTI_DAYS_BEFORE = 180  # gli acconti possono essere pagati mesi prima della fattura di saldo
+MAX_ACCONTI = 6
+# movimenti che non sono mai il pagamento di una fattura: col solo importo non vengono abbinati
+NOT_INVOICE = {"Prelievi contanti", "Tasse e contributi", "Banca e commissioni"}
 MAX_GROUP = 6
 
 _STOP = {
@@ -61,9 +64,17 @@ def number_matches(number: str, tx_text: str) -> bool:
 
 @dataclass
 class Proposal:
-    transaction: Transaction
+    transactions: list[Transaction]  # più movimenti = acconti che insieme saldano la fattura
     items: list[PlannedItem]
     reason: str
+
+    @property
+    def transaction(self) -> Transaction:
+        return self.transactions[-1]
+
+    @property
+    def total_cents(self) -> int:
+        return sum(t.amount_cents for t in self.transactions)
 
 
 @dataclass
@@ -113,6 +124,16 @@ def settle(session: Session, tx: Transaction, items: list[PlannedItem]) -> None:
             tx.planned_item = it  # relazione (non solo l'id): così anche item.transactions è subito aggiornato
         if len(items) > 1:
             it.payment_tx_id = tx.id
+    session.flush()
+
+
+def settle_installments(session: Session, txs: list[Transaction], item: PlannedItem) -> None:
+    """Più movimenti (acconti) che insieme saldano la stessa scadenza."""
+    for tx in txs:
+        tx.planned_item = item
+    item.status, item.paid_date, item.settlement = "pagato", max(t.date for t in txs), "movimento"
+    if item.account_id is None:
+        item.account_id = txs[-1].account_id
     session.flush()
 
 
@@ -215,7 +236,7 @@ def run(session: Session, apply: bool = True) -> MatchResult:
             settle(session, tx, [it])
             res.matched += 1
         else:
-            res.proposals.append(Proposal(tx, [it], f"Stesso importo, {reason}"))
+            res.proposals.append(Proposal([tx], [it], f"Stesso importo, {reason}"))
 
     # un bonifico che paga più fatture della stessa controparte
     for tx in txs:
@@ -252,27 +273,88 @@ def run(session: Session, apply: bool = True) -> MatchResult:
             settle(session, tx, combo)
             res.matched += len(combo)
         else:
-            res.proposals.append(Proposal(tx, combo, f"Un bonifico per {len(combo)} fatture della stessa controparte"))
+            res.proposals.append(Proposal([tx], combo, f"Un bonifico per {len(combo)} fatture della stessa controparte"))
 
-    # solo importo: proposta se il candidato è unico da entrambe le parti
-    claims: dict[int, list[int]] = defaultdict(list)
-    for tx_id, cands in amount_only.items():
-        for it in cands:
-            if it.id not in used_it:
-                claims[it.id].append(tx_id)
+    # importo identico al centesimo: abbinamento automatico se il candidato è unico da entrambe le parti,
+    # altrimenti (più fatture o più movimenti con lo stesso importo) proposta da confermare
     tx_by_id = {tx.id: tx for tx in txs}
     # controparti di tutte le fatture: se il movimento ne nomina un'altra, non è il pagamento di questa
     all_parties = [(w, b) for w, b in (
         (_name_words(n), merchant.brand_of(n)) for n in set(session.scalars(select(Invoice.counterparty)))
     ) if w or b]
+    exact: dict[int, list[PlannedItem]] = {}
     for tx_id, cands in amount_only.items():
-        free = [it for it in cands if it.id not in used_it]
-        tx = tx_by_id[tx_id]
-        if tx_id in used_tx or len(free) != 1 or len(claims[free[0].id]) != 1 or abs(tx.amount_cents) < MIN_AMOUNT_ONLY:
+        if tx_id in used_tx or tx_by_id[tx_id].category in NOT_INVOICE:
             continue
         if any(_name_match(w, b, tx_words[tx_id], tx_brand[tx_id]) for w, b in all_parties):
             continue
-        res.proposals.append(Proposal(tx, free, "Stesso importo, unico candidato (nome non presente nella descrizione)"))
+        a = abs(tx_by_id[tx_id].amount_cents)
+        same = [it for it in cands if it.id not in used_it and a in (abs(it.amount_cents), abs(it.invoice.total_cents))]
+        if same:
+            exact[tx_id] = same
+    claims: dict[int, list[int]] = defaultdict(list)
+    for tx_id, cands in exact.items():
+        for it in cands:
+            claims[it.id].append(tx_id)
+    for tx_id, cands in sorted(exact.items(), key=lambda kv: tx_by_id[kv[0]].date):
+        tx = tx_by_id[tx_id]
+        free = [it for it in cands if it.id not in used_it]
+        if not free:
+            continue
+        if len(free) == 1 and len(claims[free[0].id]) == 1:
+            used_tx.add(tx_id)
+            used_it.add(free[0].id)
+            if apply:
+                settle(session, tx, free)
+                res.matched += 1
+            else:
+                res.proposals.append(Proposal([tx], free, "Stesso importo"))
+            continue
+        best = min(free, key=lambda it: (it.status != "previsto", abs((tx.date - it.due_date).days)))
+        res.proposals.append(Proposal([tx], [best], f"Stesso importo, ma ci sono {max(len(free), len(claims[best.id]))} "
+                                                    "fatture o movimenti con questo importo: scegli tu"))
+
+    # acconti: più pagamenti alla stessa controparte che sommati danno esattamente l'importo della fattura
+    by_tx_word: dict[str, list[Transaction]] = defaultdict(list)
+    by_tx_brand: dict[str, list[Transaction]] = defaultdict(list)
+    for tx in txs:
+        if tx.id in used_tx:
+            continue
+        for w in tx_words[tx.id]:
+            by_tx_word[w].append(tx)
+        if tx_brand[tx.id]:
+            by_tx_brand[tx_brand[tx.id]].append(tx)
+    proposed_tx = {t.id for p in res.proposals for t in p.transactions}
+    for it in sorted(items, key=lambda i: i.invoice.date):
+        if it.id in used_it:
+            continue
+        words, brand = party[it.invoice.counterparty]
+        pool = {t.id: t for w in words for t in by_tx_word.get(w, ())}
+        if brand:
+            pool.update((t.id, t) for t in by_tx_brand.get(brand, ()))
+        inv = it.invoice
+        target = abs(it.amount_cents)
+        targets = {target, abs(inv.total_cents)} if len(inv.planned_items) == 1 else {target}
+        pays = sorted(
+            (t for t in pool.values() if t.id not in used_tx and t.id not in proposed_tx
+             and (t.amount_cents > 0) == (it.amount_cents > 0) and abs(t.amount_cents) < max(targets)
+             and inv.date - timedelta(days=ACCONTI_DAYS_BEFORE) <= t.date <= inv.date + timedelta(days=DAYS_AFTER)
+             and same_party(t, it)),
+            key=lambda t: t.date,
+        )[:14]
+        if len(pays) < 2:
+            continue
+        combo = None
+        for size in range(2, min(MAX_ACCONTI, len(pays)) + 1):
+            combo = next((c for c in itertools.combinations(pays, size) if abs(sum(t.amount_cents for t in c)) in targets), None)
+            if combo:
+                break
+        if not combo:
+            continue
+        used_it.add(it.id)
+        proposed_tx.update(t.id for t in combo)
+        res.proposals.append(Proposal(list(combo), [it], f"{len(combo)} acconti alla stessa controparte che sommati danno "
+                                                         "esattamente l'importo della fattura"))
     res.proposals.sort(key=lambda p: p.transaction.date, reverse=True)
     return res
 
