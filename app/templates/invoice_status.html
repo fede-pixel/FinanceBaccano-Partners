@@ -23,6 +23,10 @@
   <a class="kpi" href="?vista=pagate"><div class="label">Pagate e incassate verificate</div><div class="value">{{ k_paid.count }}</div>
     <div class="sub">collegate al movimento bancario</div></a>
 </div>
+{% if k_disp.count %}
+<div class="alert warn small"><a href="?vista=contenzioso"><strong>{{ k_disp.count }} fatture in contenzioso o stralciate</strong></a>:
+  {{ k_disp.disputed|eur }} in contenzioso{% if k_disp.lost %} · {{ k_disp.lost|eur }} stralciati come perdita{% endif %}. Non sono conteggiate negli incassi previsti.</div>
+{% endif %}
 
 {% if last_batch %}
 <div class="alert info" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -109,7 +113,7 @@
     <thead><tr>
       {% if vista in ('pagare', 'incassare') %}<th></th>{% endif %}
       <th>Fattura</th><th>Controparte</th>
-      {% if vista in ('pagare', 'incassare') %}<th>Scadenza</th><th class="num">Da saldare</th>{% else %}<th>Pagata il</th><th>Movimento</th><th class="num">Importo</th>{% endif %}
+      {% if vista in ('pagare', 'incassare') %}<th>Scadenza</th><th class="num">Da saldare</th>{% else %}<th>{{ 'Stato' if vista == 'contenzioso' else 'Pagata il' }}</th><th>Movimento</th><th class="num">Importo</th>{% endif %}
       <th></th></tr></thead>
     <tbody>
     {% for s in rows %}{% set inv = s.invoice %}
@@ -136,13 +140,21 @@
             <input type="hidden" name="back" value="/fatture/situazione?vista={{ vista }}">
             <input type="date" name="paid_date" value="{{ today.isoformat() }}"><button class="small">OK</button></form></details>
           {% set open_items = s.items|selectattr('status', 'equalto', 'previsto')|list %}
+          {% if vista == 'incassare' %}<details><summary class="small">Contenzioso</summary>
+          <form method="post" action="/fatture/situazione/contenzioso" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"
+                data-confirm="Mettere la fattura in contenzioso? Non sarà più considerata un incasso atteso.">
+            <input type="hidden" name="item_ids" value="{{ open_items|map(attribute='id')|join(',') }}">
+            <input type="hidden" name="back" value="/fatture/situazione?vista={{ vista }}">
+            <input name="note" placeholder="Nota (es. pratica ai legali)" style="width:170px"><button class="small">OK</button></form></details>{% endif %}
           {% if open_items|length == 1 %}<details><summary class="small">Pagamento parziale</summary>
           <form method="post" action="/fatture/situazione/parziale" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
             <input type="hidden" name="item_id" value="{{ open_items[0].id }}"><input type="hidden" name="vista" value="{{ vista }}">
             <input name="amount" inputmode="decimal" placeholder="Importo pagato" style="width:110px" required>
             <input type="date" name="paid_date" value="{{ today.isoformat() }}"><button class="small">OK</button></form></details>{% endif %}</td>
         {% else %}
-        <td>{{ s.paid_date|d if s.paid_date else '—' }}
+        <td>{% if s.state == 'contenzioso' %}<span class="badge warn">in contenzioso</span> {{ s.disputed_cents|eur }}
+          {% elif s.state == 'perdita' %}<span class="badge crit">stralciata</span> {{ s.lost_cents|eur }}{% else %}{{ s.paid_date|d if s.paid_date else '—' }}{% endif %}
+          {% if s.state in ('contenzioso', 'perdita') %}<div class="small muted">{{ s.items[0].notes }}</div>{% endif %}
           {% if s.state == 'compensata' %}<div class="small muted">{{ s.items[0].notes }}</div>{% endif %}
           {% if s.items|selectattr('settlement', 'equalto', 'manuale')|list %}<div class="small muted">segnata a mano</div>{% endif %}</td>
         <td class="small">{% for t in s.transactions %}<div>{{ t.date|d }} · {{ t.account.name }} · {{ t.amount_cents|eur_sign }}<div class="muted">{{ t.description[:70] }}</div></div>{% else %}<span class="muted">{{ s.items[0].notes or '—' }}</span>{% endfor %}</td>
@@ -151,7 +163,15 @@
           {% for t in s.transactions %}<form method="post" action="/fatture/situazione/scollega" data-confirm="Annullare l'abbinamento? Le fatture saldate da questo movimento tornano da saldare.">
             <input type="hidden" name="tx_id" value="{{ t.id }}"><input type="hidden" name="back" value="/fatture/situazione?vista={{ vista }}">
             <button class="small ghost">Scollega</button></form>{% endfor %}
-          {% if not s.transactions %}<form method="post" action="/fatture/situazione/segna">
+          {% if s.state in ('contenzioso', 'perdita') %}
+          {% set ids = s.items|selectattr('status', 'in', ['contenzioso', 'annullato'])|map(attribute='id')|join(',') %}
+          {% if s.state == 'contenzioso' %}<form method="post" action="/fatture/situazione/contenzioso" data-confirm="Stralciare il credito? Sarà registrato come perdita.">
+            <input type="hidden" name="item_ids" value="{{ ids }}"><input type="hidden" name="action" value="stralcia">
+            <button class="small ghost">Stralcia (perdita)</button></form>{% endif %}
+          <form method="post" action="/fatture/situazione/contenzioso">
+            <input type="hidden" name="item_ids" value="{{ ids }}"><input type="hidden" name="action" value="riattiva">
+            <button class="small ghost">Riattiva</button></form>
+          {% elif not s.transactions %}<form method="post" action="/fatture/situazione/segna">
             <input type="hidden" name="item_ids" value="{{ s.items|map(attribute='id')|join(',') }}"><input type="hidden" name="action" value="riapri">
             <input type="hidden" name="back" value="/fatture/situazione?vista={{ vista }}">
             <button class="small ghost">Non è pagata</button></form>{% endif %}

@@ -21,6 +21,8 @@ class Ledger:
     settled_by_movements: int = 0  # incassi/pagamenti collegati alle fatture
     settled_without_movement: int = 0  # segnate pagate a mano, compensate o presunte
     open_amount: int = 0
+    disputed: int = 0  # in contenzioso
+    lost: int = 0  # stralciato
     unlinked: list[Transaction] = field(default_factory=list)  # movimenti col nome non collegati a fatture
     unlinked_total: int = 0
 
@@ -37,7 +39,8 @@ class Ledger:
     @property
     def difference(self) -> int:
         """Fatturato − incassato (collegato + non collegato) − saldato senza movimento − aperto: 0 se i conti tornano."""
-        return self.invoiced - self.settled_by_movements - self.unlinked_total - self.settled_without_movement - self.open_amount
+        return (self.invoiced - self.settled_by_movements - self.unlinked_total - self.settled_without_movement
+                - self.open_amount - self.disputed - self.lost)
 
 
 def names_like(session: Session, q: str) -> list[str]:
@@ -60,6 +63,8 @@ def build(session: Session, q: str) -> Ledger:
         led.invoiced += sign * abs(s.invoice.total_cents)
         if s.state == "aperta":
             led.open_amount += s.open_cents
+        led.disputed += s.disputed_cents
+        led.lost += s.lost_cents
         for t in s.transactions:
             if t.id not in seen_tx:
                 seen_tx.add(t.id)

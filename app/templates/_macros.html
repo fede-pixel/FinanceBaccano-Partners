@@ -5,6 +5,7 @@
 {% macro status_badge(s) -%}
 {% if s == 'pagato' %}<span class="badge good">Pagato</span>
 {% elif s == 'annullato' %}<span class="badge">Annullato</span>
+{% elif s == 'contenzioso' %}<span class="badge warn">In contenzioso</span>
 {% else %}<span class="badge info">Previsto</span>{% endif %}
 {%- endmacro %}
 

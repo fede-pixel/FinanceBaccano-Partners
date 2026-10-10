@@ -70,12 +70,12 @@ TOOLS = [
         "name": "fatture",
         "description": "Elenco fatture con lo stato del pagamento ricavato dal controllo incrociato con i movimenti: "
                        "aperta (da pagare/incassare), pagata (movimento trovato), presunta (segnata pagata senza movimento), "
-                       "compensata (nota di credito). Include scadenza, giorni di ritardo, residuo e movimento di pagamento.",
+                       "compensata (nota di credito), contenzioso (ai legali, non è un incasso atteso), perdita (stralciata). Include scadenza, giorni di ritardo, residuo e movimento di pagamento.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "direzione": {"type": "string", "enum": ["ricevute", "emesse", "tutte"]},
-                "stato": {"type": "string", "enum": ["aperta", "pagata", "presunta", "compensata", "tutte"]},
+                "stato": {"type": "string", "enum": ["aperta", "pagata", "presunta", "compensata", "contenzioso", "perdita", "tutte"]},
                 "controparte": {"type": "string", "description": "Filtro per nome (anche parziale); stringa vuota = tutte"},
                 "limite": {"type": "integer", "description": "Massimo numero di fatture (1-300)"},
             },
@@ -218,6 +218,8 @@ def tool_panoramica(session: Session) -> dict:
         overdue = [s for s in rows if s.due and s.due < today]
         out[label] = {"numero": len(rows), "totale": _eur(sum(s.open_cents for s in rows)),
                       "scadute": len(overdue), "totale_scadute": _eur(sum(s.open_cents for s in overdue))}
+    out["crediti_in_contenzioso"] = _eur(sum(s.disputed_cents for s in statuses if s.invoice.direction == "attiva"))
+    out["crediti_stralciati"] = _eur(sum(s.lost_cents for s in statuses if s.invoice.direction == "attiva"))
     cov = invoice_match.coverage(session)
     out["movimenti_importati"] = {
         "periodo_coperto_da": cov.start and cov.start.isoformat(),
@@ -252,7 +254,7 @@ def tool_fatture(session: Session, direzione: str, stato: str, controparte: str,
                 "numero": s.invoice.number, "data": s.invoice.date.isoformat(), "tipo": s.invoice.doc_type,
                 "direzione": "emessa" if s.invoice.direction == "attiva" else "ricevuta",
                 "controparte": s.invoice.counterparty, "totale": _eur(s.invoice.total_cents), "stato": s.state,
-                "residuo": _eur(s.open_cents) if s.state == "aperta" else None,
+                "residuo": _eur(s.open_cents) if s.state == "aperta" else (_eur(s.disputed_cents) if s.state == "contenzioso" else None),
                 "scadenza": s.due and s.due.isoformat(), "giorni_ritardo": s.overdue_days or None,
                 "scadenza_stimata": any(it.estimated_date for it in s.items) or None,
                 "pagata_il": s.paid_date and s.paid_date.isoformat(),
@@ -339,7 +341,8 @@ def tool_controparte(session: Session, nome: str) -> dict:
         "fatturato_iva_compresa": _eur(led.invoiced), "saldato_con_movimenti_abbinati": _eur(led.settled_by_movements),
         "movimenti_col_nome_non_abbinati": _eur(led.unlinked_total), "saldato_senza_movimento": _eur(led.settled_without_movement),
         "incassato_o_pagato_dalla_banca": _eur(led.collected), "residuo_reale": _eur(led.residual),
-        "fatture_ancora_aperte": _eur(led.open_amount), "differenza": _eur(led.difference),
+        "fatture_ancora_aperte": _eur(led.open_amount), "in_contenzioso": _eur(led.disputed), "stralciato": _eur(led.lost),
+        "differenza": _eur(led.difference),
         "nota": "residuo_reale = fatturato − banca − saldato senza movimento. differenza = residuo_reale − fatture aperte: "
                 "0 = i conti tornano; negativa con movimenti non abbinati = acconti da abbinare alle fatture",
         "fatture": [{"numero": s.invoice.number, "data": s.invoice.date.isoformat(), "tipo": s.invoice.doc_type,

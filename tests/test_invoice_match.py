@@ -289,3 +289,33 @@ def test_truncated_company_names():
     assert im.name_matches("MONDATI E SELVA SRL", "BONIFICO A MONDATI E SE")
     assert not im.name_matches("AB LOGISTICA srls", "TRASPORTI LOGISTICA ROSSI")  # parola generica
     assert not im.name_matches("Ciancarella Alessio", "BONIFICO ALESSIO VERDI")  # persona: servono nome e cognome
+
+
+def test_dispute_write_off_and_reactivate(client):
+    from app.db import SessionLocal
+    from app.services import counterparty, kpi
+
+    with SessionLocal() as s:
+        inv = _inv(s, "B1", "BARONE SRL", 3_700_000, date(2026, 8, 1), direction="attiva")
+        inv.vat_cents = 0
+        s.commit()
+        item_id, inv_id = inv.planned_items[0].id, inv.id
+    client.post("/fatture/situazione/contenzioso", data={"item_ids": str(item_id), "note": "legali"})
+    with SessionLocal() as s:
+        st = next(x for x in im.invoice_statuses(s) if x.invoice.id == inv_id)
+        assert st.state == "contenzioso" and st.disputed_cents == 3_700_000 and st.open_cents == 0
+        rep = kpi.build(s, 12, date(2026, 10, 10))
+        assert rep.receivables == 0 and rep.disputed == 3_700_000
+        assert rep.ytd_revenue == 3_700_000 and rep.recon["ebitda_prudent"] == rep.ytd_ebitda - 3_700_000
+        led = counterparty.build(s, "barone")
+        assert led.residual == 3_700_000 and led.disputed == 3_700_000 and led.difference == 0
+        assert "legali" in s.get(PlannedItem, item_id).notes
+    page = client.get("/fatture/situazione?vista=contenzioso")
+    assert "BARONE SRL" in page.text and "Stralcia (perdita)" in page.text
+    client.post("/fatture/situazione/contenzioso", data={"item_ids": str(item_id), "action": "stralcia"})
+    with SessionLocal() as s:
+        st = next(x for x in im.invoice_statuses(s) if x.invoice.id == inv_id)
+        assert st.state == "perdita" and st.lost_cents == 3_700_000
+    client.post("/fatture/situazione/contenzioso", data={"item_ids": str(item_id), "action": "riattiva"})
+    with SessionLocal() as s:
+        assert next(x for x in im.invoice_statuses(s) if x.invoice.id == inv_id).state == "aperta"

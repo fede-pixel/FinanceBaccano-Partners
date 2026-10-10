@@ -118,6 +118,8 @@ Nelle viste da pagare/da incassare:
 
 Le banche spesso troncano il nome del beneficiario ("RENOVATIO SNC DI B"): per le aziende basta la prima parola distintiva della ragione sociale.
 
+**Contenzioso e stralcio**: una fattura emessa che il cliente non pagherà (pratica ai legali) si mette **in contenzioso** dalla vista Da incassare. La fattura resta emessa (e nei ricavi), ma esce da crediti, forecast, scadute in dashboard e capacità di investimento. Nei KPI compare a parte, con un **EBITDA prudente** che la toglie. Se il credito è perso si **stralcia** (perdita); se il cliente paga o si trova un accordo si **riattiva**, e un suo pagamento in banca viene comunque proposto per l'abbinamento.
+
 **Scheda cliente/fornitore** (`/controparte`, cerca per nome o clicca un nome nelle tabelle): fatturato IVA compresa, incassato o pagato risultante dalla banca (abbinato alle fatture + movimenti col suo nome non ancora abbinati), residuo reale e confronto con le fatture ancora aperte. Risponde a domande come "da Barone abbiamo incassato 48.000 €, tornano i conti?". La stessa scheda è disponibile all'Assistente AI.
 
 Ogni vista si scarica in Excel. "Segna pagata" serve per i pagamenti da conti non caricati in app.

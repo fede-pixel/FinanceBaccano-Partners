@@ -19,6 +19,7 @@ VIEWS = {
     "incassare": ("attiva", ("aperta",), "Da incassare"),
     "presunte": (None, ("presunta",), "Pagate senza movimento"),
     "pagate": (None, ("pagata", "compensata"), "Pagate e incassate"),
+    "contenzioso": (None, ("contenzioso", "perdita"), "Contenzioso e perdite"),
 }
 
 
@@ -85,6 +86,8 @@ def situation(request: Request, vista: str = "pagare", q: str = "", lotto: str =
         last_batch_label=last[2] if len(last) > 2 else "Conferma in blocco",
         last_batch_size=invoice_match.batch_size(session, last_batch),
         k_pay=kpi("passiva"), k_inc=kpi("attiva"), k_pres=kpi(None, "presunta"), k_paid=kpi(None, "pagata"),
+        k_disp={"count": sum(1 for x in all_rows if x.state in ("contenzioso", "perdita")),
+                "disputed": sum(x.disputed_cents for x in all_rows), "lost": sum(x.lost_cents for x in all_rows)},
     )
 
 
@@ -223,6 +226,22 @@ def partial(item_id: int = Form(...), amount: str = Form(...), paid_date: str = 
         return redirect(back, err=str(exc))
     session.commit()
     return redirect(back, msg=f"Pagamento parziale registrato: restano {fmt_eur(abs(it.amount_cents))} da saldare")
+
+
+@router.post("/fatture/situazione/contenzioso")
+def dispute(item_ids: str = Form(...), action: str = Form("contenzioso"), note: str = Form(""),
+            back: str = Form("/fatture/situazione?vista=contenzioso"), session: Session = Depends(get_session)):
+    """Contenzioso (legali), stralcio (credito perso) o riattivazione."""
+    items = [it for i in _ids(item_ids) if (it := session.get(PlannedItem, i))]
+    if action == "stralcia":
+        n, msg = invoice_match.write_off(items), "Credito stralciato: registrato come perdita"
+    elif action == "riattiva":
+        n, msg = invoice_match.reactivate(items), "Credito riattivato: torna tra quelli da incassare"
+    else:
+        n, msg = invoice_match.set_dispute(items, note.strip()), ("Fattura in contenzioso: esce da incassi previsti, "
+                                                                  "forecast e capacità di investimento")
+    session.commit()
+    return redirect(back if back.startswith("/") else "/fatture/situazione", msg=msg if n else "Nessuna modifica")
 
 
 @router.get("/fatture/situazione.xlsx")

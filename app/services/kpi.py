@@ -76,6 +76,8 @@ class KPIReport:
     top_clients: list[tuple[str, int, float]] = field(default_factory=list)  # (cliente, ricavi 12 mesi, quota)
     invoices_without_vat: int = 0
     coverage_start: date | None = None
+    disputed: int = 0  # crediti in contenzioso (IVA compresa)
+    lost: int = 0  # crediti stralciati
     recon: dict = field(default_factory=dict)  # confronto con il "fatturato attivo − passivo" di Aruba (anno in corso)
     ytd_revenue_without_vat: int = 0  # parte dei ricavi dell'anno presa da fatture senza IVA nota (quindi IVA compresa)
     ytd_revenue_invoices_without_vat: int = 0
@@ -210,6 +212,14 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
     def open_total(direction: str, overdue: bool = False) -> int:
         return sum(s.open_cents for s in open_rows if s.invoice.direction == direction and (not overdue or (s.due and s.due < today)))
 
+    # crediti in contenzioso/stralciati sulle fatture dell'anno, in imponibile (quota del totale)
+    def taxable_share(st) -> float:
+        inv = st.invoice
+        return (inv.taxable_cents / abs(inv.total_cents)) if inv.taxable_cents is not None and inv.total_cents else 1.0
+    year_disputes = [x for x in statuses if x.invoice.direction == "attiva" and x.invoice.date.year == today.year
+                     and (x.disputed_cents or x.lost_cents)]
+    recon["disputed_taxable"] = int(sum((x.disputed_cents + x.lost_cents) * taxable_share(x) for x in year_disputes))
+    recon["ebitda_prudent"] = ytd_ebitda - recon["disputed_taxable"]
     total_clients = sum(v for v in clients.values() if v > 0)
     top = sorted(((n, v, v / total_clients if total_clients else 0) for n, v in clients.items() if v > 0), key=lambda x: -x[1])[:5]
     return KPIReport(
@@ -224,6 +234,8 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
         avg_monthly_out=avg_out,
         runway_months=balance_today / avg_out if avg_out > 0 else None,
         receivables=open_total("attiva"),
+        disputed=sum(x.disputed_cents for x in statuses if x.invoice.direction == "attiva"),
+        lost=sum(x.lost_cents for x in statuses if x.invoice.direction == "attiva"),
         receivables_overdue=open_total("attiva", True),
         payables=open_total("passiva"),
         payables_overdue=open_total("passiva", True),

@@ -29,6 +29,7 @@
       <div class="value {{ 'neg' if led.residual < -100 }}">{{ led.residual|eur_sign if led.residual < 0 else led.residual|eur }}</div>
       <div class="sub">fatturato − {{ incasso }}{% if led.settled_without_movement %} − {{ led.settled_without_movement|eur }} segnati saldati senza movimento{% endif %}</div></div>
     <div class="kpi"><div class="label">Fatture ancora aperte</div><div class="value">{{ led.open_amount|eur }}</div>
+      {% if led.disputed or led.lost %}<div class="sub"><span class="badge warn">contenzioso</span> {{ led.disputed|eur }}{% if led.lost %} · stralciati {{ led.lost|eur }}{% endif %}</div>{% endif %}
       <div class="sub">{% if led.difference|abs <= 100 %}<span class="pos">coincide con il residuo: i conti tornano</span>
         {% elif led.unlinked_total and led.difference < 0 %}{{ led.unlinked_total|eur }} di movimenti col suo nome non sono abbinati a una fattura (acconti?): abbinali per chiudere le fatture
         {% elif led.difference > 0 %}{{ led.difference|eur }} risultano saldati ma senza fattura aperta corrispondente: controlla note di credito e fatture segnate pagate
@@ -52,6 +53,7 @@
         <tr><td>{{ inv.date|d }}</td><td>{{ inv.number }}<div class="small muted">{{ inv.counterparty }}</div></td>
           <td class="small">{{ inv.doc_type }} · {{ 'emessa' if inv.direction == 'attiva' else 'ricevuta' }}</td>
           <td>{% if s.state == 'aperta' %}<span class="badge {{ 'crit' if s.overdue_days > 0 else 'info' }}">{{ 'scaduta' if s.overdue_days > 0 else 'aperta' }}</span>
+            {% elif s.state == 'contenzioso' %}<span class="badge warn">in contenzioso</span>{% elif s.state == 'perdita' %}<span class="badge crit">stralciata</span>
             {% elif s.state == 'pagata' %}<span class="badge good">saldata</span>{% elif s.state == 'compensata' %}<span class="badge">compensata</span>
             {% else %}<span class="badge warn">saldata senza movimento</span>{% endif %}</td>
           <td class="small">{% for t in s.transactions %}<div>{{ t.date|d }} · {{ t.amount_cents|eur_sign }}</div>{% else %}—{% endfor %}</td>

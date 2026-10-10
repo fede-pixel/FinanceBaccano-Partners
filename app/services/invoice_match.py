@@ -408,13 +408,15 @@ def run(session: Session, apply: bool = True) -> MatchResult:
 @dataclass
 class InvoiceStatus:
     invoice: Invoice
-    state: str  # aperta | pagata | compensata | presunta | nessun_pagamento
+    state: str  # aperta | pagata | compensata | presunta | contenzioso | perdita | nessun_pagamento
     due: date | None  # prima scadenza aperta
     open_cents: int  # residuo (positivo)
     paid_cents: int
     paid_date: date | None
     transactions: list[Transaction]
     items: list[PlannedItem]
+    disputed_cents: int = 0  # in contenzioso (legali): non è un incasso atteso
+    lost_cents: int = 0  # stralciato: credito perso
 
     @property
     def overdue_days(self) -> int:
@@ -430,11 +432,14 @@ def invoice_statuses(session: Session, direction: str | None = None) -> list[Inv
     group_tx = {t.id: t for t in session.scalars(select(Transaction).where(Transaction.id.in_(group_tx_ids)))} if group_tx_ids else {}
     out = []
     for inv in invoices:
-        items = [it for it in inv.planned_items if it.status != "annullato"]
+        items = [it for it in inv.planned_items if it.status != "annullato" or it.settlement == "perdita"]
         if not items:
             out.append(InvoiceStatus(inv, "nessun_pagamento", None, 0, 0, None, [], []))
             continue
         open_items = [it for it in items if it.status == "previsto"]
+        sign = 1 if inv.doc_type not in CREDIT_NOTE_TYPES else -1
+        disputed = sum(abs(it.amount_cents) for it in items if it.status == "contenzioso") * sign
+        lost = sum(abs(it.amount_cents) for it in items if it.status == "annullato") * sign
         txs = []
         for it in items:
             txs += it.transactions
@@ -443,6 +448,10 @@ def invoice_statuses(session: Session, direction: str | None = None) -> list[Inv
         paid = [it for it in items if it.status == "pagato"]
         if open_items:
             state = "aperta"
+        elif disputed:
+            state = "contenzioso"
+        elif lost:
+            state = "perdita"
         elif all(it.settlement == "compensata" for it in paid):
             state = "compensata"
         elif all(it.transactions or it.payment_tx_id or it.settlement in ("compensata", "manuale") for it in paid):
@@ -458,8 +467,45 @@ def invoice_statuses(session: Session, direction: str | None = None) -> list[Inv
             paid_date=max((it.paid_date for it in paid if it.paid_date), default=None),
             transactions=txs,
             items=items,
+            disputed_cents=disputed,
+            lost_cents=lost,
         ))
     return out
+
+
+# ---------- contenzioso e stralcio ----------
+
+def set_dispute(items: list[PlannedItem], note: str = "") -> int:
+    """Credito affidato ai legali: esce dagli incassi previsti (forecast, investimenti, crediti), la fattura resta."""
+    n = 0
+    for it in items:
+        if it.status == "previsto":
+            it.status, it.no_auto_match = "contenzioso", True
+            it.notes = (f"In contenzioso dal {date.today():%d/%m/%Y}" + (f": {note}" if note else "")
+                        + (f" — {it.notes}" if it.notes else ""))
+            n += 1
+    return n
+
+
+def write_off(items: list[PlannedItem]) -> int:
+    """Stralcio: il credito è considerato perso."""
+    n = 0
+    for it in items:
+        if it.status in ("contenzioso", "previsto"):
+            it.status, it.settlement, it.paid_date = "annullato", "perdita", date.today()
+            it.notes = f"Stralciato il {date.today():%d/%m/%Y} (credito perso)" + (f" — {it.notes}" if it.notes else "")
+            n += 1
+    return n
+
+
+def reactivate(items: list[PlannedItem]) -> int:
+    """Torna un credito normale da incassare (es. accordo con il cliente)."""
+    n = 0
+    for it in items:
+        if it.status == "contenzioso" or (it.status == "annullato" and it.settlement == "perdita"):
+            it.status, it.settlement, it.paid_date = "previsto", "", None
+            n += 1
+    return n
 
 
 # ---------- conferma in blocco (e annullamento) ----------

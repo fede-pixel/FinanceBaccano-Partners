@@ -29,7 +29,8 @@
 </div>
 <div class="kpis">
   <div class="kpi"><div class="label">Crediti da incassare</div><div class="value">{{ rep.receivables|eur }}</div>
-    <div class="sub">{% if rep.receivables_overdue %}<span class="neg">di cui scaduti {{ rep.receivables_overdue|eur }}</span>{% else %}nessuno scaduto{% endif %}</div></div>
+    <div class="sub">{% if rep.receivables_overdue %}<span class="neg">di cui scaduti {{ rep.receivables_overdue|eur }}</span>{% else %}nessuno scaduto{% endif %}
+      {% if rep.disputed or rep.lost %}<br><a href="/fatture/situazione?vista=contenzioso">+ {{ rep.disputed|eur }} in contenzioso{% if rep.lost %}, {{ rep.lost|eur }} stralciati{% endif %}</a> (esclusi){% endif %}</div></div>
   <div class="kpi"><div class="label">Debiti verso fornitori</div><div class="value">{{ rep.payables|eur }}</div>
     <div class="sub">{% if rep.payables_overdue %}<span class="neg">di cui scaduti {{ rep.payables_overdue|eur }}</span>{% else %}nessuno scaduto{% endif %}</div></div>
   <div class="kpi"><div class="label">Tempo medio di incasso (DSO)</div><div class="value">{{ '—' if rep.dso is none else rep.dso|round|int ~ ' gg' }}</div>
@@ -52,6 +53,10 @@
       <tr><td>− Autofatture servizi esteri (TD17/TD18: Google, AWS, Anthropic…), costi veri che Aruba non conta nel grafico</td><td class="num">{{ (-r.self_costs)|eur_sign }}</td><td></td></tr>
       <tr><td>− Personale (stipendi pagati dalla banca)</td><td class="num">{{ (-r.personnel)|eur_sign }}</td><td></td></tr>
       <tr><td><strong>= EBITDA stimato</strong> (sempre sull'imponibile: l'IVA non è né ricavo né costo)</td><td class="num"><strong>{{ rep.ytd_ebitda|eur_sign }}</strong></td><td></td></tr>
+      {% if r.disputed_taxable %}
+      <tr><td>− Crediti in contenzioso o stralciati su fatture dell'anno (imponibile): ricavi che probabilmente non incasserai</td><td class="num">{{ (-r.disputed_taxable)|eur_sign }}</td><td></td></tr>
+      <tr><td><strong>= EBITDA prudente</strong></td><td class="num"><strong>{{ r.ebitda_prudent|eur_sign }}</strong></td><td></td></tr>
+      {% endif %}
     </tbody>
   </table>
   <p class="small muted" style="margin-top:6px"><strong>Perché due colonne.</strong> La fattura e la lista di Aruba mostrano il totale IVA compresa; il grafico "Fatturato" di Aruba usa l'imponibile e non conta le autofatture. Nella colonna IVA compresa le autofatture sono contate come nella lista di Aruba, sia tra le emesse sia tra le ricevute, quindi nella differenza si annullano. L'utile si misura sull'imponibile, perché l'IVA incassata va versata allo Stato e quella pagata si recupera.</p>
