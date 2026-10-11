@@ -306,7 +306,9 @@ def test_dispute_write_off_and_reactivate(client):
         assert st.state == "contenzioso" and st.disputed_cents == 3_700_000 and st.open_cents == 0
         rep = kpi.build(s, 12, date(2026, 10, 10))
         assert rep.receivables == 0 and rep.disputed == 3_700_000
-        assert rep.ytd_revenue == 3_700_000 and rep.recon["ebitda_prudent"] == rep.ytd_ebitda - 3_700_000
+        # la fattura non verrà pagata: fuori da ricavi ed EBITDA, ma nel confronto con Aruba resta tra le emesse
+        assert rep.ytd_revenue == 0 and rep.recon["disputed_taxable"] == 3_700_000
+        assert rep.recon["revenue_issued"] == 3_700_000 and rep.recon["ebitda_prudent"] == rep.ytd_ebitda
         led = counterparty.build(s, "barone")
         assert led.residual == 3_700_000 and led.disputed == 3_700_000 and led.difference == 0
         assert "legali" in s.get(PlannedItem, item_id).notes

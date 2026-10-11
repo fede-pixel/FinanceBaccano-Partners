@@ -30,7 +30,7 @@
     <div class="sub">{% if rep.ytd_revenue_without_vat %}<span class="neg">di cui {{ rep.ytd_revenue_without_vat|eur }} IVA compresa ({{ rep.ytd_revenue_invoices_without_vat }} fatture senza IVA indicata)</span>{% elif rep.revenue_growth is not none %}ultimi 3 mesi {{ '+' if rep.revenue_growth >= 0 }}{{ pctv(rep.revenue_growth) }} sui 3 precedenti{% else %}imponibile fatture emesse{% endif %}</div></div>
   <div class="kpi"><div class="label">EBITDA dell'anno (stimato)</div><div class="value {{ 'neg' if rep.ytd_ebitda < 0 }}">{{ rep.ytd_ebitda|eur }}</div>
     <div class="sub">margine {{ pctv(rep.ytd_margin) }}
-      {% if rep.recon.disputed_taxable %}<br>prudente <strong>{{ rep.recon.ebitda_prudent|eur }}</strong>: senza i {{ rep.recon.disputed_taxable|eur }} (imponibile) di crediti in contenzioso{% endif %}</div></div>
+      {% if rep.recon.disputed_taxable %}<br>esclusi {{ rep.recon.disputed_taxable|eur }} (imponibile) di fatture che non verranno pagate (contenzioso){% endif %}</div></div>
   <div class="kpi"><div class="label">Flusso di cassa dell'anno</div><div class="value {{ 'neg' if rep.ytd_cash < 0 }}">{{ rep.ytd_cash|eur_sign }}</div>
     <div class="sub">entrate − uscite bancarie, giroconti esclusi</div></div>
   <div class="kpi"><div class="label">Liquidità oggi</div><div class="value">{{ rep.balance_today|eur }}</div>
@@ -55,7 +55,7 @@
     <thead><tr><th></th><th class="num">Imponibile<div class="muted" style="font-weight:400">come il grafico "Fatturato" di Aruba</div></th>
       <th class="num">IVA compresa<div class="muted" style="font-weight:400">come i totali della lista di Aruba</div></th></tr></thead>
     <tbody>
-      <tr><td>Fatture emesse</td><td class="num">{{ r.revenue|eur }}</td><td class="num">{{ (r.revenue_gross + r.self_gross)|eur }}</td></tr>
+      <tr><td>Fatture emesse</td><td class="num">{{ r.revenue_issued|eur }}</td><td class="num">{{ (r.revenue_gross + r.self_gross)|eur }}</td></tr>
       <tr><td>− Fatture ricevute</td><td class="num">{{ (r.self_costs - r.costs)|eur_sign }}</td><td class="num">{{ (-(r.costs_gross + r.self_gross))|eur_sign }}</td></tr>
       <tr><td><strong>= Differenza emesse − ricevute</strong></td><td class="num"><strong>{{ r.aruba_like|eur_sign }}</strong></td><td class="num"><strong>{{ r.diff_gross|eur_sign }}</strong></td></tr>
       <tr><td class="muted">di cui IVA (sulle vendite meno quella sugli acquisti): non è guadagno, va versata allo Stato</td><td></td><td class="num muted">{{ r.net_vat|eur_sign }}</td></tr>
@@ -63,11 +63,8 @@
       {% if r.capex %}<tr><td>+ Beni da ammortizzare (es. veicoli, macchinari): sono investimenti, non costi dell'anno; il commercialista ne deduce solo la quota di ammortamento</td><td class="num">{{ r.capex|eur_sign }}</td><td></td></tr>{% endif %}
       {% if r.excluded_costs %}<tr><td>+ Acconti già compresi nella fattura di saldo (altrimenti contati due volte)</td><td class="num">{{ r.excluded_costs|eur_sign }}</td><td></td></tr>{% endif %}
       <tr><td>− Personale (stipendi pagati dalla banca)</td><td class="num">{{ (-r.personnel)|eur_sign }}</td><td></td></tr>
-      <tr><td><strong>= EBITDA stimato</strong> (sempre sull'imponibile: l'IVA non è né ricavo né costo)</td><td class="num"><strong>{{ rep.ytd_ebitda|eur_sign }}</strong></td><td></td></tr>
-      {% if r.disputed_taxable %}
-      <tr><td>− Crediti in contenzioso o stralciati su fatture dell'anno (imponibile): ricavi che probabilmente non incasserai</td><td class="num">{{ (-r.disputed_taxable)|eur_sign }}</td><td></td></tr>
-      <tr><td><strong>= EBITDA prudente</strong></td><td class="num"><strong>{{ r.ebitda_prudent|eur_sign }}</strong></td><td></td></tr>
-      {% endif %}
+      {% if r.disputed_taxable %}<tr><td>− Fatture che non verranno pagate (in contenzioso o stralciate, es. Barone): imponibile non coperto dagli acconti, escluso da ricavi, EBITDA e previsioni</td><td class="num">{{ (-r.disputed_taxable)|eur_sign }}</td><td></td></tr>{% endif %}
+      <tr><td><strong>= EBITDA</strong> (sempre sull'imponibile: l'IVA non è né ricavo né costo)</td><td class="num"><strong>{{ rep.ytd_ebitda|eur_sign }}</strong></td><td></td></tr>
       <tr><td colspan="3" style="padding-top:14px"><strong>Previsione al {{ ye.end|d }}</strong></td></tr>
       <tr><td>+ Ricavi ancora da fatturare entro il {{ ye.end|d }} (rate dei contratti, ricorrenze, altre entrate previste; IVA scorporata)</td><td class="num">{{ ye.revenue_to_come|eur_sign }}</td><td></td></tr>
       <tr><td>− Costi stimati su questi ricavi ({{ (ye.cost_ratio * 100)|round|int }}%, come in Capacità di investimento)</td><td class="num">{{ (-ye.costs_to_come)|eur_sign }}</td><td></td></tr>

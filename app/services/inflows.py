@@ -153,7 +153,10 @@ def revenue_outlook(session: Session, today: date | None = None) -> RevenueOutlo
 
     today = today or date.today()
     start, dec31 = date(today.year, 1, 1), date(today.year, 12, 31)
-    issued = sum(_signed_taxable(i)[0] for i in session.scalars(select(Invoice).where(
+    from app.services.kpi import uncollectible
+
+    unc = uncollectible(session)  # fatture che non verranno pagate (contenzioso): fuori dal fatturato previsto
+    issued = sum(_signed_taxable(i)[0] - unc.get(i.id, 0) for i in session.scalars(select(Invoice).where(
         Invoice.direction == "attiva", Invoice.date >= start, Invoice.date <= today)) if i.doc_type not in SELF_INVOICE_TYPES)
     future = [it for it in session.scalars(select(PlannedItem).where(
         PlannedItem.status == "previsto", PlannedItem.amount_cents > 0, PlannedItem.invoice_id.is_(None),

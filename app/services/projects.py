@@ -227,8 +227,9 @@ class ProjectReport:
 
 def report(session: Session, year: int) -> ProjectReport:
     """Stessi conti dei KPI (imponibile, note di credito sottratte, cespiti e acconti esclusi fuori), divisi per cantiere."""
-    from app.services.kpi import COST_EXCLUDED
+    from app.services.kpi import COST_EXCLUDED, uncollectible
 
+    unc = uncollectible(session)
     rep = ProjectReport(year)
     by_id: dict[int, ProjectRow] = {}
     invs = session.scalars(select(Invoice).where(Invoice.date >= date(year, 1, 1), Invoice.date <= date(year, 12, 31)))
@@ -238,6 +239,8 @@ def report(session: Session, year: int) -> ProjectReport:
         is_revenue = inv.direction == "attiva" and inv.doc_type not in SELF_INVOICE_TYPES
         if not is_revenue and inv.cost_treatment in COST_EXCLUDED:
             continue
+        if is_revenue:
+            amount -= unc.get(inv.id, 0)  # fatture che non verranno pagate (contenzioso): fuori dai ricavi
         if not is_revenue and not inv.description:
             rep.without_description += 1
         if inv.project_id:

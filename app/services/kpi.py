@@ -102,6 +102,21 @@ def _signed_taxable(inv: Invoice) -> tuple[int, bool]:
 COST_EXCLUDED = ("cespite", "escluso")
 
 
+def uncollectible(session: Session) -> dict[int, int]:
+    """Fatture emesse che non verranno pagate (in contenzioso o stralciate): {id fattura: imponibile non incassabile}.
+    È la quota del totale non coperta dagli acconti già incassati, al netto dell'IVA. Escono da ricavi ed EBITDA in
+    tutte le dashboard e previsioni."""
+    out = {}
+    for st in invoice_match.invoice_statuses(session, "attiva"):
+        bad = st.disputed_cents + st.lost_cents
+        if not bad:
+            continue
+        inv = st.invoice
+        share = (inv.taxable_cents / abs(inv.total_cents)) if inv.taxable_cents is not None and inv.total_cents else 1.0
+        out[inv.id] = int(bad * share)
+    return out
+
+
 def _paid_days(statuses, direction: str, since: date) -> float | None:
     """Giorni medi (ponderati per importo) tra data fattura e pagamento verificato da movimento."""
     num = den = 0
@@ -133,6 +148,8 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
         return by_key.get(f"{d.year}-{d.month:02d}")
 
     clients: dict[str, int] = defaultdict(int)
+    unc = uncollectible(session)
+    unc_year = 0
     without_vat = 0
     ytd_rev_novat = ytd_rev_novat_n = 0
     for inv in session.scalars(select(Invoice).where(Invoice.date >= first, Invoice.date <= today)):
@@ -144,6 +161,10 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
             r.invoices_without_vat += 1
             without_vat += 1
         if inv.direction == "attiva" and inv.doc_type not in SELF_INVOICE_TYPES:
+            lost = unc.get(inv.id, 0)  # crediti che non verranno pagati: fuori dai ricavi
+            amount -= lost
+            if inv.date.year == today.year:
+                unc_year += lost
             r.revenue += amount
             if missing and inv.date.year == today.year:
                 ytd_rev_novat += amount
@@ -202,7 +223,8 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
     for direction, key in (("attiva", "rev"), ("passiva", "cost")):
         recon[f"{key}_novat"] = sum(1 for i in year_inv if i.direction == direction and i.vat_cents is None and i.total_cents)
         recon[f"{key}_zero"] = sum(1 for i in year_inv if i.direction == direction and not i.total_cents)
-    recon["aruba_like"] = recon["revenue"] - (recon["costs"] - recon["self_costs"])
+    recon["revenue_issued"] = recon["revenue"] + unc_year  # come su Aruba: anche le fatture che non verranno pagate
+    recon["aruba_like"] = recon["revenue_issued"] - (recon["costs"] - recon["self_costs"])
     # stessi conti IVA compresa (come i totali della lista di Aruba e come esce la fattura)
     def gross(i: Invoice) -> int:
         return (-1 if i.doc_type in CREDIT_NOTE_TYPES else 1) * abs(i.total_cents)
@@ -224,14 +246,9 @@ def build(session: Session, months: int = 12, today: date | None = None) -> KPIR
     def open_total(direction: str, overdue: bool = False) -> int:
         return sum(s.open_cents for s in open_rows if s.invoice.direction == direction and (not overdue or (s.due and s.due < today)))
 
-    # crediti in contenzioso/stralciati sulle fatture dell'anno, in imponibile (quota del totale)
-    def taxable_share(st) -> float:
-        inv = st.invoice
-        return (inv.taxable_cents / abs(inv.total_cents)) if inv.taxable_cents is not None and inv.total_cents else 1.0
-    year_disputes = [x for x in statuses if x.invoice.direction == "attiva" and x.invoice.date.year == today.year
-                     and (x.disputed_cents or x.lost_cents)]
-    recon["disputed_taxable"] = int(sum((x.disputed_cents + x.lost_cents) * taxable_share(x) for x in year_disputes))
-    recon["ebitda_prudent"] = ytd_ebitda - recon["disputed_taxable"]
+    # crediti in contenzioso/stralciati sulle fatture dell'anno (imponibile): già tolti da ricavi ed EBITDA
+    recon["disputed_taxable"] = unc_year
+    recon["ebitda_prudent"] = ytd_ebitda
     total_clients = sum(v for v in clients.values() if v > 0)
     top = sorted(((n, v, v / total_clients if total_clients else 0) for n, v in clients.items() if v > 0), key=lambda x: -x[1])[:5]
     return KPIReport(
@@ -381,12 +398,13 @@ def provisional_view(session: Session, cutoff: date) -> Provisional:
     e come risulta oggi (anche i costi con data entro la chiusura ma arrivati dopo)."""
     start = date(cutoff.year, 1, 1)
     invs = list(session.scalars(select(Invoice).where(Invoice.date >= start, Invoice.date <= cutoff)))
+    unc = uncollectible(session)
     revenue = costs_all = costs_known = 0
     late = []
     for inv in invs:
         amount, _ = _signed_taxable(inv)
         if inv.direction == "attiva" and inv.doc_type not in SELF_INVOICE_TYPES:
-            revenue += amount
+            revenue += amount - unc.get(inv.id, 0)
             continue
         if inv.cost_treatment in COST_EXCLUDED:
             continue
@@ -449,5 +467,5 @@ def year_end_forecast(session: Session, rep: KPIReport, today: date | None = Non
     return YearEndForecast(
         end=out.year_end.end, revenue_done=rep.ytd_revenue, revenue_to_come=to_come,
         costs_done=r.get("costs", 0) - r.get("capex", 0) - r.get("excluded_costs", 0), personnel_done=r.get("personnel", 0),
-        cost_ratio=ratio, costs_to_come=round(to_come * ratio), disputed=r.get("disputed_taxable", 0),
+        cost_ratio=ratio, costs_to_come=round(to_come * ratio), disputed=0,  # i crediti persi sono già fuori dai ricavi
     )
