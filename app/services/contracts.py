@@ -153,3 +153,32 @@ def seed_october_2026(session: Session) -> bool:
     sync_recurrence(session, rec)
     session.flush()
     return True
+
+
+def fix_paid_before_plans(session: Session) -> int:
+    """Correzione dell'11/10/2026, una sola volta: i piani di Del Moro, Luongo, Mercuri e Salerno riportano solo
+    quanto resta da incassare al 10/10 e le fatture già emesse a questi clienti sono state incassate.
+    - il piano DMG vale al 10/10 (la FPR 72/26 del 07/10 è incassata e non scala il residuo);
+    - le fatture emesse a questi clienti fino al 10/10 ancora aperte in app sono segnate incassate senza movimento
+      (lotto annullabile; se poi arriva il movimento in banca, l'abbinamento lo collega)."""
+    from app.services import invoice_match
+    from app.services.util import get_setting, set_setting
+
+    if get_setting(session, "fix_contracts_2026_10_11"):
+        return 0
+    rows = list(session.scalars(select(Contract)))
+    if not rows:
+        return 0
+    set_setting(session, "fix_contracts_2026_10_11", "1")
+    cutoff = date(2026, 10, 10)
+    for c in rows:
+        if c.client.startswith("DMG") and c.as_of < cutoff:
+            c.as_of = cutoff
+    paid = [s for s in invoice_match.invoice_statuses(session, "attiva")
+            if s.state == "aperta" and s.invoice.date <= cutoff and any(name_matches(c.client, s.invoice.counterparty) for c in rows)]
+    batch, n = invoice_match.mark_presumed(session, paid)
+    if n:
+        set_setting(session, "fix_contracts_2026_10_11_batch", batch)
+    for c in rows:
+        sync_contract(session, c)
+    return n

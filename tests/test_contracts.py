@@ -163,3 +163,28 @@ def test_dmg_is_labelled_del_moro(session):
     session.flush()
     assert "Del Moro" in c.title
     assert all("Del Moro" in i.title for i in contracts.plan(session, c).items)
+
+
+def test_fix_paid_before_plans(session):
+    from app.services import invoice_match
+
+    c = _dmg(session)
+    for n, d, cents in (("FPR 69/26", date(2026, 10, 5), 550_000), ("FPR 72/26", date(2026, 10, 7), 1_148_400),
+                        ("FPR 90/26", date(2026, 10, 20), 300_000)):
+        inv = Invoice(direction="attiva", doc_type="TD01", number=n, date=d, counterparty="DMG ANALYTICS & CONSULTING SRLS",
+                      total_cents=cents, vat_cents=cents // 11, file_name=n, file_hash=n)
+        inv.planned_items.append(PlannedItem(title=n, amount_cents=cents, due_date=d, source="fattura"))
+        session.add(inv)
+    other = Invoice(direction="attiva", doc_type="TD01", number="X1", date=date(2026, 9, 1), counterparty="Altro Cliente Srl",
+                    total_cents=100_000, vat_cents=9_091, file_name="o", file_hash="o")
+    other.planned_items.append(PlannedItem(title="X1", amount_cents=100_000, due_date=date(2026, 10, 1), source="fattura"))
+    session.add(other)
+    session.flush()
+    assert contracts.fix_paid_before_plans(session) == 2 and contracts.fix_paid_before_plans(session) == 0
+    session.flush()
+    st = {s.invoice.number: s.state for s in invoice_match.invoice_statuses(session, "attiva")}
+    assert st["FPR 69/26"] == st["FPR 72/26"] == "presunta"
+    assert st["FPR 90/26"] == "aperta" and st["X1"] == "aperta"  # dopo il piano, o di altri clienti: non toccate
+    assert c.as_of == date(2026, 10, 10)
+    p = contracts.plan(session, c)
+    assert p.to_plan == 6_182_124 - 300_000  # solo la fattura emessa dopo il piano scala il residuo
