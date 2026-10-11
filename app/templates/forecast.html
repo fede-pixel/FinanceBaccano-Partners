@@ -52,6 +52,30 @@
 
 <div class="card">{{ forecast_chart(chart, "fc-chart") }}</div>
 
+{% set y = outlook.year_end %}
+<div class="card">
+  <h2>Previsione di fatturato</h2>
+  <div class="kpis">
+    <div class="kpi"><div class="label">Fatturato previsto al {{ y.end|d }}</div><div class="value">{{ y.total|eur }}</div>
+      <div class="sub">imponibile: {{ y.issued|eur }} già fatturati + {{ y.to_come|eur }} da fatturare entro dicembre</div></div>
+    <div class="kpi"><div class="label">Ultimo incasso previsto</div><div class="value">{{ outlook.last_due|d if outlook.last_due else '—' }}</div>
+      <div class="sub">{{ outlook.last_item or 'nessun incasso previsto' }}</div></div>
+    {% if outlook.last %}<div class="kpi"><div class="label">Fatturato previsto fino al {{ outlook.last.end|d }}</div><div class="value">{{ outlook.last.total|eur }}</div>
+      <div class="sub">imponibile da gennaio {{ y.end.year }}: di cui {{ outlook.next_year|eur }} nel {{ outlook.last.end.year }}</div></div>{% endif %}
+  </div>
+  <table class="small" style="max-width:760px">
+    <thead><tr><th></th><th class="num">Al {{ y.end|d }}</th>{% if outlook.last %}<th class="num">Al {{ outlook.last.end|d }}</th>{% endif %}</tr></thead>
+    <tbody>
+      <tr><td>Fatture emesse dal 1° gennaio (imponibile, come il grafico "Fatturato" di Aruba)</td><td class="num">{{ y.issued|eur }}</td>{% if outlook.last %}<td class="num">{{ outlook.last.issued|eur }}</td>{% endif %}</tr>
+      <tr><td>+ Rate dei contratti ancora da fatturare (IVA del contratto scorporata)</td><td class="num">{{ y.contracts|eur }}</td>{% if outlook.last %}<td class="num">{{ outlook.last.contracts|eur }}</td>{% endif %}</tr>
+      <tr><td>+ Ricorrenze e altre entrate previste (IVA {{ sales_vat }}% scorporata)</td><td class="num">{{ y.other|eur }}</td>{% if outlook.last %}<td class="num">{{ outlook.last.other|eur }}</td>{% endif %}</tr>
+      <tr><td><strong>= Fatturato previsto</strong></td><td class="num"><strong>{{ y.total|eur }}</strong></td>{% if outlook.last %}<td class="num"><strong>{{ outlook.last.total|eur }}</strong></td>{% endif %}</tr>
+      <tr><td class="muted">Entrate future IVA compresa (quello che arriva in banca)</td><td class="num muted">{{ y.gross_to_come|eur }}</td>{% if outlook.last %}<td class="num muted">{{ outlook.last.gross_to_come|eur }}</td>{% endif %}</tr>
+    </tbody>
+  </table>
+  <p class="small muted">Le fatture già emesse e non ancora incassate sono già nel fatturato e non vengono contate di nuovo. Le rate dei contratti si considerano fatturate nel mese in cui sono previste; le fatture emesse in anticipo spostano il fatturato prima, ma il totale non cambia. Le entrate in contenzioso sono escluse.</p>
+</div>
+
 {% set chart_id = 'fc-inflows' %}{% include "_inflows.html" %}
 
 <div class="card">

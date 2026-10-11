@@ -127,3 +127,31 @@ def test_monthly_inflows_by_source(session, ):
 def test_inflows_on_pages(client):
     for url in ("/", "/forecast", "/contratti"):
         assert "Incassi previsti mese per mese" in client.get(url).text
+
+
+def test_revenue_outlook(session):
+    from app.models import Recurrence
+    from app.services import inflows
+
+    session.add(Invoice(direction="attiva", doc_type="TD01", number="E1", date=date(2026, 3, 1), counterparty="Cliente",
+                        total_cents=1_100_000, vat_cents=100_000, file_name="e", file_hash="e"))
+    c = Contract(client="Salerno", total_taxable_cents=11_000_000, vat_included=True, vat_rate=10,
+                 as_of=date(2026, 10, 10), end_date=date(2027, 3, 31))
+    session.add(c)
+    session.flush()
+    contracts.sync_contract(session, c, today=date(2026, 10, 10))  # 6 rate da 1.833.333 IVA compresa
+    session.add(PlannedItem(title="Fattura aperta", amount_cents=500_000, due_date=date(2026, 11, 1), invoice_id=None,
+                            source="manuale"))
+    session.commit()
+    o = inflows.revenue_outlook(session, date(2026, 10, 10))
+    y = o.year_end
+    assert y.issued == 1_000_000
+    assert y.contracts == round(1_833_334 * 100 / 110) * 3 or abs(y.contracts - 5_000_000) <= 3  # ott-dic, IVA scorporata
+    assert y.other == round(500_000 * 100 / 110)
+    assert o.last_due == date(2027, 3, 31) and o.last is not None
+    assert abs(o.last.contracts - 10_000_000) <= 3 and abs(o.next_year - 5_000_000) <= 3
+
+
+def test_forecast_page_shows_revenue_outlook(client):
+    page = client.get("/forecast").text
+    assert "Previsione di fatturato" in page and "Ultimo incasso previsto" in page

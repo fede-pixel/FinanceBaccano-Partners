@@ -116,4 +116,5 @@ def forecast(
         prev_mese=f"{prev_m.year}-{prev_m.month:02d}",
         next_mese=f"{next_m.year}-{next_m.month:02d}",
         inflows=inflows.monthly(session, today),
+        outlook=inflows.revenue_outlook(session, today), sales_vat=inflows.SALES_VAT,
     )
