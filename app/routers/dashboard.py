@@ -137,6 +137,7 @@ def forecast(
         inflows=inflows.monthly(session, today),
         outlook=inflows.revenue_outlook(session, today), sales_vat=inflows.SALES_VAT,
         fixed=investment.fixed_costs(session),
+        overdue_tranches=int(get_setting(session, "overdue_tranches") or 1),
         rem=investment.remainder(session, today),
         cfg_reserve_months=f"{investment.settings(session)['inv_reserve_months']:g}".replace(".", ","),
     )

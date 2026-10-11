@@ -93,6 +93,7 @@ class ForecastDay:
     items: list[PlannedItem] = field(default_factory=list)
     below_threshold: bool = False
     estimated_out: int = 0  # uscite stimate (negative) in proporzione agli incassi, già comprese in outflow
+    overdue_part: int = 0  # tranche delle voci scadute non abbinate contata in questo giorno
     contract_in: int = 0  # quota del giorno delle rate stimate dei contratti, già compresa in inflow
 
 
@@ -170,6 +171,23 @@ def estimated_costs(items: list[PlannedItem], today: date, ratio: float) -> dict
     return out
 
 
+def overdue_schedule(today: date, total: int, tranches: int) -> dict[date, int]:
+    """Voci scadute non abbinate: tutte oggi, oppure in N tranche uguali distribuite fino a fine mese."""
+    if not total:
+        return {}
+    if tranches <= 1:
+        return {today: total}
+    month_end = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    span = (month_end - today).days
+    base, rest = divmod(abs(total), tranches)
+    sign = 1 if total > 0 else -1
+    out: dict[date, int] = {}
+    for i in range(tranches):
+        d = today + timedelta(days=round(span * (i + 1) / tranches))
+        out[d] = out.get(d, 0) + sign * (base + (1 if i < rest else 0))
+    return out
+
+
 def cost_ratio(session: Session) -> float:
     """Percentuale di costi sugli incassi usata dal forecast (0 = disattivata), la stessa della capacità di investimento."""
     if get_setting(session, "forecast_estimate_costs") == "0":
@@ -227,11 +245,12 @@ def build_forecast(
             past_flows.setdefault(d, []).append(amount)
 
     balance_today = actual_total(today)
-    running = balance_today + (overdue_total if include_overdue else 0)
+    overdue_dates = overdue_schedule(today, overdue_total, int(get_setting(session, "overdue_tranches") or 0)) if include_overdue else {}
+    running = balance_today
     # Voci previste tra oggi e l'inizio del periodo (periodi futuri)
     d = today
     while d < start:
-        running += sum(p.amount_cents for p in by_day.get(d, [])) + est.get(d, 0) + spread.get(d, 0)
+        running += sum(p.amount_cents for p in by_day.get(d, [])) + est.get(d, 0) + spread.get(d, 0) + overdue_dates.get(d, 0)
         d += timedelta(days=1)
 
     days: list[ForecastDay] = []
@@ -254,6 +273,12 @@ def build_forecast(
             estimated_total += day.estimated_out
             planned_in += day.inflow
             planned_out += day.outflow
+            # voci scadute ancora da pagare/incassare: oggi o nelle tranche scelte (fuori dai totali previsti)
+            day.overdue_part = overdue_dates.get(d, 0)
+            if day.overdue_part > 0:
+                day.inflow += day.overdue_part
+            else:
+                day.outflow += day.overdue_part
             running += day.inflow + day.outflow
             day.projected = running
             if d == today:

@@ -40,7 +40,7 @@
 {% if fc.overdue %}
 <div class="alert warn">
   <strong>{{ fc.overdue|length }} voci scadute e non ancora abbinate a un movimento</strong> ({{ fc.overdue_total|eur_sign }}).
-  {% if fc.overdue_included %}Sono conteggiate nel saldo previsto di oggi.{% else %}Non sono conteggiate (vedi Impostazioni).{% endif %}
+  {% if fc.overdue_included %}Sono conteggiate nel saldo previsto{% if overdue_tranches > 1 %}, divise in {{ overdue_tranches }} tranche entro fine mese{% else %} di oggi{% endif %}.{% else %}Non sono conteggiate (vedi Impostazioni).{% endif %}
   <details style="margin-top:6px"><summary>Mostra</summary>
     <table><tbody>
     {% for p in fc.overdue %}
@@ -119,6 +119,7 @@
           {% for p in d.items %}
             <div><a href="/previsti/{{ p.id }}">{{ p.title }}</a> <span class="small muted">{{ p.amount_cents|eur_sign }}{% if p.account %} · {{ p.account.name }}{% endif %}</span></div>
           {% endfor %}
+          {% if d.overdue_part %}<div class="muted">Voci scadute, tranche <span class="small">{{ d.overdue_part|eur_sign }}</span></div>{% endif %}
           {% if d.contract_in %}<div class="muted">Rate dei contratti, quota del giorno <span class="small">{{ d.contract_in|eur_sign }}</span></div>{% endif %}
           {% if d.estimated_out %}<div class="muted">Costi stimati sugli incassi ({{ (fc.cost_ratio * 100)|round|int }}%) <span class="small">{{ d.estimated_out|eur_sign }}</span></div>{% endif %}
           {% if d.date < fc.today and (d.inflow or d.outflow) %}<span class="small muted">movimenti reali</span>{% endif %}

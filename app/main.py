@@ -45,11 +45,11 @@ def bootstrap(db_path=None) -> None:
         contracts.fix_paid_lanza(session)
         from app.services.util import get_setting, set_setting
 
-        if not get_setting(session, "fix_overdue_forecast_2026_10"):
-            # 11/10/2026: le voci scadute non abbinate erano già pagate e il saldo previsto partiva da ~1.000 € invece
-            # che dal saldo reale: da ora non si sottraggono più (l'avviso nel forecast le elenca comunque)
-            set_setting(session, "include_overdue_in_forecast", "0")
-            set_setting(session, "fix_overdue_forecast_2026_10", "1")
+        if not get_setting(session, "fix_overdue_tranches_2026_10"):
+            # 11/10/2026: le voci scadute (~15.000 €) sono ancora da pagare, in 3 tranche entro fine ottobre
+            set_setting(session, "include_overdue_in_forecast", "1")
+            set_setting(session, "overdue_tranches", "3")
+            set_setting(session, "fix_overdue_tranches_2026_10", "1")
         contracts.sync_all(session)  # le rate partono dal mese corrente: si spostano col passare dei mesi
         session.commit()
         from app.services.util import get_setting, set_setting

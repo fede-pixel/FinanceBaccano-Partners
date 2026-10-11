@@ -300,11 +300,15 @@ def test_fix_paid_lanza(session):
     assert st == {"FPR 61/26": "presunta", "FPR 99/26": "aperta"}
 
 
-def test_overdue_not_subtracted_by_default(session):
+def test_overdue_paid_in_three_tranches(session):
     from app.services.forecast import build_forecast
 
     session.add(PlannedItem(title="Fornitore scaduto", amount_cents=-1_547_125, due_date=date(2026, 10, 1)))
     session.commit()
     fc = build_forecast(session, date(2026, 10, 11), date(2026, 10, 31), date(2026, 10, 11))
-    assert not fc.overdue_included and len(fc.overdue) == 1
-    assert fc.days[0].projected == fc.balance_today  # parte dal saldo reale
+    assert fc.overdue_included and len(fc.overdue) == 1
+    assert fc.days[0].projected == fc.balance_today  # oggi si parte dal saldo reale
+    parts = [(d.date, d.overdue_part) for d in fc.days if d.overdue_part]
+    assert [p for _, p in parts] == [-515_709, -515_708, -515_708]
+    assert [d for d, _ in parts] == [date(2026, 10, 18), date(2026, 10, 24), date(2026, 10, 31)]
+    assert fc.end_balance == fc.balance_today - 1_547_125

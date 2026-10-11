@@ -161,8 +161,8 @@ SETTING_DEFAULTS = {
     "packages_dir": "",
     "low_balance_threshold": "500000",  # centesimi
     "default_payment_days": "30",
-    # le voci scadute non abbinate di solito sono già pagate (il saldo della banca le comprende): non si tolgono dal previsto
-    "include_overdue_in_forecast": "0",
+    "include_overdue_in_forecast": "1",
+    "overdue_tranches": "3",  # le voci scadute si pagano in N tranche entro fine mese (0/1 = tutte oggi)
     "reminder_days": "5",
     "match_tolerance_days": "7",
     "eb_application_id": "",

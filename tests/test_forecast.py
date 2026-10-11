@@ -21,7 +21,8 @@ def test_balance_calculator_forward_and_backward():
 def test_forecast_daily(session):
     today = date(2026, 10, 10)
     set_setting(session, "low_balance_threshold", "0")
-    set_setting(session, "include_overdue_in_forecast", "1")  # qui verifico il caso in cui lo scaduto si conta
+    set_setting(session, "include_overdue_in_forecast", "1")  # qui verifico il caso in cui lo scaduto si conta tutto oggi
+    set_setting(session, "overdue_tranches", "1")
     acc = Account(name="BCC", kind="conto")
     session.add(acc)
     session.flush()

@@ -31,7 +31,7 @@ async def settings_save(request: Request, session: Session = Depends(get_session
     for key in ("company_name", "company_vat", "accountant_email", "docs_dir", "packages_dir", "admin_start_period"):
         if key in form:
             set_setting(session, key, str(form[key]).strip())
-    for key in ("default_payment_days", "reminder_days", "match_tolerance_days"):
+    for key in ("default_payment_days", "reminder_days", "match_tolerance_days", "overdue_tranches"):
         if str(form.get(key, "")).strip().isdigit():
             set_setting(session, key, str(form[key]).strip())
     threshold = parse_amount(str(form.get("low_balance_threshold", "")))

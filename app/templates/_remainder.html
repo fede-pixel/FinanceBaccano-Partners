@@ -8,7 +8,7 @@
     <table class="small">
       <tbody>
         <tr><td>Saldo oggi</td><td class="num">{{ rem.balance_today|eur }}</td></tr>
-        {% if rem.overdue %}<tr><td>+ Voci scadute non abbinate (contate oggi)</td><td class="num">{{ rem.overdue|eur_sign }}</td></tr>{% endif %}
+        {% if rem.overdue %}<tr><td>− Voci scadute ancora da pagare (in tranche entro fine mese)</td><td class="num">{{ rem.overdue|eur_sign }}</td></tr>{% endif %}
         <tr><td>+ Incassi previsti</td><td class="num pos">{{ rem.planned_in|eur_sign }}</td></tr>
         <tr><td>− Uscite note (fatture da pagare, ricorrenze, voci previste)</td><td class="num">{{ rem.known_out|eur_sign }}</td></tr>
         <tr><td>− Uscite stimate (costi fino al {{ (rem.cost_ratio * 100)|round|int }}% degli incassi di ogni mese)</td><td class="num">{{ rem.estimated_out|eur_sign }}</td></tr>
