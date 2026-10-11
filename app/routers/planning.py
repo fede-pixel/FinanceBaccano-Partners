@@ -230,6 +230,8 @@ async def invoices_import(
         msg += f", {len(res.duplicates)} già presenti"
     if res.vat_completed:
         msg += f" (a {res.vat_completed} è stata aggiunta l'IVA mancante)"
+    if res.descriptions_completed:
+        msg += f" · a {res.descriptions_completed} fatture già presenti sono state aggiunte causale e descrizioni"
     if res.rejected:
         msg += f" · {len(res.rejected)} scartate dallo SdI ignorate (non sono fatture valide)"
     from app.services import invoice_match

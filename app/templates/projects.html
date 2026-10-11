@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Cantieri{% endblock %}
+{% macro pctv(v) %}{{ '—' if v is none else ('%.1f'|format(v * 100))|replace('.', ',') ~ '%' }}{% endmacro %}
+{% block content %}
+{% set c0 = editing %}
+<div class="page-head">
+  <div><h1>Cantieri – EBITDA per cantiere {{ year }}</h1>
+  <div class="muted">Ogni fattura emessa e ricevuta assegnata al suo cantiere, leggendo causale e righe delle fatture: ricavi, costi diretti e margine di ciascun cantiere.</div></div>
+  <form method="get" class="toolbar"><select name="anno" onchange="this.form.submit()">
+    {% for y in range(today.year, today.year - 3, -1) %}<option value="{{ y }}" {{ 'selected' if y == year }}>{{ y }}</option>{% endfor %}</select></form>
+</div>
+
+{% if rep.without_description %}
+<div class="alert warn small"><strong>{{ rep.without_description }} fatture ricevute senza descrizione.</strong> Il report Excel di Aruba non contiene causale e righe: per farle leggere all'app scarica da Aruba gli <strong>XML</strong> (selezione multipla → Scarica → ZIP) delle fatture ricevute ed emesse e caricali in <a href="/fatture">Fatture (Aruba)</a>. Le fatture già presenti non vengono duplicate: si aggiungono solo le descrizioni.</div>
+{% endif %}
+
+<div class="kpis">
+  <div class="kpi"><div class="label">Margine dei cantieri</div><div class="value">{{ rep.projects_margin|eur }}</div>
+    <div class="sub">ricavi − costi diretti di {{ rep.rows|length }} cantieri</div></div>
+  <div class="kpi"><div class="label">Spese generali</div><div class="value">{{ rep.general_costs|eur }}</div>
+    <div class="sub">+ personale {{ rep.personnel|eur }}</div></div>
+  <div class="kpi"><div class="label">Costi da assegnare</div><div class="value {{ 'neg' if rep.unassigned_costs }}">{{ rep.unassigned_costs|eur }}</div>
+    <div class="sub">{{ rep.n_unassigned }} fatture{% if rep.assigned_share is not none %} · assegnato il {{ pctv(rep.assigned_share) }} dei costi{% endif %}</div></div>
+  <div class="kpi"><div class="label">EBITDA {{ year }}</div><div class="value">{{ rep.ebitda|eur }}</div>
+    <div class="sub">margine cantieri − spese generali − da assegnare − personale (uguale ai KPI)</div></div>
+</div>
+
+<div class="card">
+  <div class="page-head" style="margin-bottom:8px"><h2 style="margin:0">Margine per cantiere</h2>
+    <div class="toolbar">
+      <form method="post" action="/cantieri/crea-da-clienti"><input type="hidden" name="anno" value="{{ year }}"><button class="small ghost">Crea cantieri dai clienti</button></form>
+      {% if ai_enabled %}<form method="post" action="/cantieri/assegna-ai" data-confirm="Far leggere a Claude le fatture da assegnare? Può richiedere qualche minuto."
+        onsubmit="this.querySelector('button').textContent='Sto leggendo le fatture…'"><input type="hidden" name="anno" value="{{ year }}"><button class="small">Assegna con AI</button></form>{% endif %}
+    </div></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Cantiere</th><th class="num">Ricavi</th><th class="num">Costi diretti</th><th class="num">Margine</th><th class="num">%</th><th class="num">Fatture</th></tr></thead>
+    <tbody>{% for r in rep.rows %}<tr><td><a href="/cantieri/{{ r.project.id }}?anno={{ year }}">{{ r.project.name }}</a></td>
+      <td class="num">{{ r.revenue|eur }}</td><td class="num">{{ r.costs|eur }}</td>
+      <td class="num {{ 'neg' if r.margin < 0 }}"><strong>{{ r.margin|eur_sign }}</strong></td><td class="num">{{ pctv(r.margin_pct) }}</td>
+      <td class="num small">{{ r.n_in }} emesse · {{ r.n_out }} ricevute</td></tr>{% endfor %}
+      {% if rep.unassigned_revenue %}<tr><td><a href="/cantieri?anno={{ year }}&vista=emesse">Ricavi non assegnati</a></td><td class="num">{{ rep.unassigned_revenue|eur }}</td><td></td><td class="num">{{ rep.unassigned_revenue|eur_sign }}</td><td></td><td></td></tr>{% endif %}
+      <tr><td>− Spese generali</td><td></td><td class="num">{{ rep.general_costs|eur }}</td><td class="num">{{ (-rep.general_costs)|eur_sign }}</td><td></td><td></td></tr>
+      <tr><td>− Costi ancora da assegnare</td><td></td><td class="num">{{ rep.unassigned_costs|eur }}</td><td class="num">{{ (-rep.unassigned_costs)|eur_sign }}</td><td></td><td></td></tr>
+      <tr><td>− Personale (stipendi dalla banca)</td><td></td><td class="num">{{ rep.personnel|eur }}</td><td class="num">{{ (-rep.personnel)|eur_sign }}</td><td></td><td></td></tr>
+      <tr><td><strong>= EBITDA</strong></td><td></td><td></td><td class="num"><strong>{{ rep.ebitda|eur_sign }}</strong></td><td></td><td></td></tr>
+    </tbody></table></div>
+  <p class="small muted">Importi in imponibile, come nei KPI (note di credito sottratte; beni da ammortizzare e acconti compresi nel saldo esclusi). Le fatture emesse si assegnano dal cliente; quelle ricevute dalle parole chiave del cantiere trovate in causale e righe. Le tue scelte manuali non vengono mai cambiate da regole o AI.</p>
+</div>
+
+<div class="card">
+  <div class="page-head" style="margin-bottom:8px"><h2 style="margin:0">{{ 'Fatture emesse senza cantiere' if vista == 'emesse' else 'Fatture ricevute da assegnare' }} ({{ todo|length }}{{ '+' if todo|length == 150 }})</h2>
+    <a class="small" href="/cantieri?anno={{ year }}{{ '' if vista == 'emesse' else '&vista=emesse' }}">{{ 'Ricevute da assegnare' if vista == 'emesse' else 'Emesse senza cantiere' }} →</a></div>
+  {% if todo %}<div class="table-wrap"><table class="small">
+    <thead><tr><th>Data</th><th>Controparte</th><th>Descrizione</th><th class="num">Totale</th><th>Cantiere</th></tr></thead>
+    <tbody>{% for inv in todo %}<tr><td>{{ inv.date|d }}</td><td>{{ inv.counterparty }}<div class="muted">n. {{ inv.number }}</div></td>
+      <td style="max-width:420px">{{ inv.description[:300] if inv.description else '' }}{% if not inv.description %}<span class="muted">nessuna descrizione (carica l'XML)</span>{% endif %}</td>
+      <td class="num">{{ inv.total_cents|eur }}</td><td>{% set back = '/cantieri?anno=' ~ year ~ ('&vista=emesse' if vista == 'emesse' else '') %}{% include "_assign.html" %}</td></tr>{% endfor %}</tbody>
+  </table></div>{% else %}<p class="muted">Nessuna fattura da assegnare.</p>{% endif %}
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Cantieri</h2>
+    <table class="small"><tbody>{% for p in plist %}<tr><td><a href="/cantieri/{{ p.id }}?anno={{ year }}">{{ p.name }}</a>{% if not p.active %} <span class="badge">chiuso</span>{% endif %}
+      <div class="muted">{{ p.client }}{% if p.keywords %} · parole chiave: {{ p.keywords }}{% endif %}</div></td>
+      <td><a class="small" href="/cantieri?edit={{ p.id }}#form">Modifica</a></td></tr>{% else %}<tr><td class="muted">Nessun cantiere: crea i cantieri dai clienti o aggiungili qui.</td></tr>{% endfor %}</tbody></table>
+  </div>
+  <div class="card" id="form">
+    <h2>{{ 'Modifica cantiere' if c0 else 'Nuovo cantiere' }}</h2>
+    <form method="post" action="/cantieri/salva">
+      <input type="hidden" name="project_id" value="{{ c0.id if c0 else 0 }}">
+      <div class="field"><label>Nome</label><input name="name" required value="{{ c0.name if c0 }}" placeholder="es. Del Moro – Via Gramsci 85, Monterotondo"></div>
+      <div class="field"><label>Cliente (come nelle fatture emesse)</label><input name="client" value="{{ c0.client if c0 }}"></div>
+      <div class="field"><label>Parole chiave nelle descrizioni (separate da virgola)</label><input name="keywords" value="{{ c0.keywords if c0 }}" placeholder="es. Gramsci, Monterotondo, Del Moro"></div>
+      {% if c0 %}<div class="field"><label class="check"><input type="checkbox" name="active" value="1" {{ 'checked' if c0.active }}> Attivo</label></div>{% endif %}
+      <div class="field"><label>Note</label><textarea name="notes">{{ c0.notes if c0 }}</textarea></div>
+      <button>Salva</button>
+      {% if c0 %}<a href="/cantieri" class="btn btn-ghost">Annulla</a>{% endif %}
+    </form>
+    {% if c0 %}<form method="post" action="/cantieri/{{ c0.id }}/elimina" data-confirm="Eliminare il cantiere? Le sue fatture tornano da assegnare." style="margin-top:8px"><button class="small ghost">Elimina cantiere</button></form>{% endif %}
+    <p class="small muted">Parole chiave utili: via e numero civico, città o quartiere, cognome del cliente, nome del condominio. Bastano poche parole ben distintive.</p>
+  </div>
+</div>
+{% endblock %}

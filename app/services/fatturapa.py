@@ -48,6 +48,28 @@ class ParsedInvoice:
     total_cents: int
     installments: list[Installment] = field(default_factory=list)
     vat_cents: int | None = None
+    description: str = ""  # causale + descrizioni delle righe
+
+
+MAX_DESCRIPTION = 4000
+
+
+def _description(body: ET.Element) -> str:
+    """Causale e righe della fattura in un testo leggibile: "Causale: ... | Righe: descrizione (importo); ..."."""
+    parts = []
+    causali = [c.text.strip() for c in body.findall("DatiGenerali/DatiGeneraliDocumento/Causale") if c.text and c.text.strip()]
+    if causali:
+        parts.append("Causale: " + " ".join(causali))
+    lines = []
+    for ln in body.findall("DatiBeniServizi/DettaglioLinee"):
+        desc = " ".join(_text(ln, "Descrizione").split())
+        if not desc:
+            continue
+        amount = _text(ln, "PrezzoTotale")
+        lines.append(f"{desc} ({amount})" if amount else desc)
+    if lines:
+        parts.append("Righe: " + "; ".join(lines))
+    return " | ".join(parts)[:MAX_DESCRIPTION]
 
 
 def _strip_ns(root: ET.Element) -> ET.Element:
@@ -150,6 +172,7 @@ def parse_invoice_xml(xml_bytes: bytes) -> list[ParsedInvoice]:
                 total_cents=total,
                 installments=installments,
                 vat_cents=vat,
+                description=_description(body),
             )
         )
     return out
@@ -359,6 +382,7 @@ class InvoiceImportResult:
     imported: list[Invoice] = field(default_factory=list)
     duplicates: list[str] = field(default_factory=list)
     vat_completed: int = 0  # fatture già presenti a cui è stata aggiunta l'IVA
+    descriptions_completed: int = 0  # fatture già presenti a cui sono state aggiunte causale e righe
     rejected: list[str] = field(default_factory=list)  # righe "Scartata" dallo SdI, ignorate
     errors: list[str] = field(default_factory=list)
 
@@ -390,8 +414,8 @@ def import_invoices(
             dups = list(session.scalars(select(Invoice).where(
                 (Invoice.file_hash == file_hash) | Invoice.file_hash.like(f"{file_hash[:56]}-%"))))
             if dups:
-                if any(d.vat_cents is None for d in dups):
-                    # file già importato prima che l'app salvasse l'IVA: la completo senza duplicare
+                if any(d.vat_cents is None or not d.description for d in dups):
+                    # file già importato prima che l'app salvasse IVA e descrizioni: le completo senza duplicare
                     try:
                         parsed = parse_invoice_xml(extract_xml(data))
                     except Exception:
@@ -401,6 +425,9 @@ def import_invoices(
                         if d.vat_cents is None and i < len(parsed) and parsed[i].vat_cents is not None:
                             d.vat_cents = parsed[i].vat_cents
                             res.vat_completed += 1
+                        if not d.description and i < len(parsed) and parsed[i].description:
+                            d.description = parsed[i].description
+                            res.descriptions_completed += 1
                 res.duplicates.append(name)
                 continue
             try:
@@ -436,6 +463,9 @@ def import_invoices(
                     if old.vat_cents is None and inv.vat_cents is not None:
                         old.vat_cents = inv.vat_cents
                         res.vat_completed += 1
+                    if not old.description and inv.description:
+                        old.description = inv.description  # fattura caricata dal report Excel: aggiungo le descrizioni
+                        res.descriptions_completed += 1
                     res.duplicates.append(name)
                     continue
                 invoice = Invoice(
@@ -447,6 +477,7 @@ def import_invoices(
                     counterparty_vat=cp_vat,
                     total_cents=inv.total_cents,
                     vat_cents=inv.vat_cents,
+                    description=inv.description,
                     file_name=name,
                     file_hash=file_hash if i == 0 else f"{file_hash[:56]}-{i}",
                 )

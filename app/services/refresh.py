@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Account, ChecklistItem, DocCategory, Transaction
-from app.services import admin_docs, categorize, contracts, invoice_match, recurrence
+from app.services import admin_docs, categorize, contracts, invoice_match, projects, recurrence
 from app.services.util import get_setting, set_setting
 
 log = logging.getLogger(__name__)
@@ -82,6 +82,7 @@ def refresh_all(session: Session) -> dict:
     recategorized = categorize.apply(session)
     session.flush()
     matched = invoice_match.run(session)
+    projects.auto_assign(session)
     regenerated, _ = refresh_exports(session)
     session.commit()
     out = {"categorie": recategorized, "abbinamenti": matched.matched + matched.compensated, "export": regenerated,

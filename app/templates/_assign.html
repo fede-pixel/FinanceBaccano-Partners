@@ -1,0 +1,10 @@
+{# select per assegnare una fattura: richiede inv, plist, back #}
+<form method="post" action="/cantieri/fattura" style="display:flex;gap:4px">
+  <input type="hidden" name="invoice_id" value="{{ inv.id }}"><input type="hidden" name="back" value="{{ back }}">
+  <select name="target" class="small" onchange="this.form.submit()" aria-label="Cantiere">
+    <option value="" {{ 'selected' if not inv.project_id and inv.project_source != 'generale' }}>— da assegnare —</option>
+    <option value="generale" {{ 'selected' if inv.project_source == 'generale' }}>Spesa generale (nessun cantiere)</option>
+    {% for p in plist %}<option value="{{ p.id }}" {{ 'selected' if inv.project_id == p.id }}>{{ p.name }}</option>{% endfor %}
+  </select>
+</form>
+{% if inv.project_source in ('auto', 'ai') %}<span class="badge info small">{{ 'regola' if inv.project_source == 'auto' else 'AI' }}</span>{% endif %}

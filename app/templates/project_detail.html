@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ p.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>{{ p.name }}</h1><div class="muted">{{ p.client }}{% if p.keywords %} · parole chiave: {{ p.keywords }}{% endif %}</div></div>
+  <a href="/cantieri?anno={{ year }}">← Tutti i cantieri</a>
+</div>
+<div class="kpis">
+  <div class="kpi"><div class="label">Ricavi {{ year }}</div><div class="value">{{ (row.revenue if row else 0)|eur }}</div></div>
+  <div class="kpi"><div class="label">Costi diretti</div><div class="value">{{ (row.costs if row else 0)|eur }}</div></div>
+  <div class="kpi"><div class="label">Margine</div><div class="value">{{ (row.margin if row else 0)|eur_sign }}</div>
+    <div class="sub">{% if row and row.margin_pct is not none %}{{ ('%.1f'|format(row.margin_pct * 100))|replace('.', ',') }}% dei ricavi{% endif %}</div></div>
+</div>
+<div class="card">
+  <div class="table-wrap"><table class="small">
+    <thead><tr><th>Data</th><th>Tipo</th><th>Controparte</th><th>Descrizione</th><th class="num">Totale</th><th>Cantiere</th></tr></thead>
+    <tbody>{% for inv in invs %}<tr><td>{{ inv.date|d }}</td><td>{{ 'Emessa' if inv.direction == 'attiva' else 'Ricevuta' }}</td>
+      <td>{{ inv.counterparty }}<div class="muted">n. {{ inv.number }}</div></td><td style="max-width:420px">{{ inv.description[:300] }}</td>
+      <td class="num">{{ inv.total_cents|eur }}</td><td>{% set back = '/cantieri/' ~ p.id ~ '?anno=' ~ year %}{% include "_assign.html" %}</td></tr>
+    {% else %}<tr><td colspan="6" class="muted">Nessuna fattura assegnata nel {{ year }}.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}

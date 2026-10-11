@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal, init_engine
 from app.models import Transaction
-from app.routers import accounts, admin, analysis, assistant, banks, contracts, economics, notes, dashboard, invoice_status, planning, settings, upload
+from app.routers import accounts, admin, analysis, assistant, banks, contracts, economics, notes, projects, dashboard, invoice_status, planning, settings, upload
 from app.services.admin_docs import ensure_checklist, seed_categories
 from app.services.recurrence import sync_all
 
@@ -50,6 +50,13 @@ def bootstrap(db_path=None) -> None:
             set_setting(session, "include_overdue_in_forecast", "1")
             set_setting(session, "overdue_tranches", "3")
             set_setting(session, "fix_overdue_tranches_2026_10", "1")
+        from app.services import projects
+
+        if not get_setting(session, "seed_projects_2026"):
+            # cantieri iniziali: uno per contratto e per cliente dell'anno, poi le regole assegnano le fatture
+            projects.seed_from_clients(session, 2026)
+            projects.auto_assign(session)
+            set_setting(session, "seed_projects_2026", "1")
         contracts.sync_all(session)  # le rate partono dal mese corrente: si spostano col passare dei mesi
         session.commit()
         from app.services.util import get_setting, set_setting
@@ -185,7 +192,7 @@ def create_app() -> FastAPI:
                 return PlainTextResponse("Richiesta bloccata: origine non locale", status_code=403)
         return await call_next(request)
 
-    for r in (auth, dashboard, upload, accounts, analysis, contracts, notes, assistant, banks, economics, invoice_status, planning, admin, settings):
+    for r in (auth, dashboard, upload, accounts, analysis, contracts, projects, notes, assistant, banks, economics, invoice_status, planning, admin, settings):
         app.include_router(r.router)
     return app
 

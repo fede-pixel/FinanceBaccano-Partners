@@ -86,6 +86,7 @@ NAV = [
         ("/carica", "Caricamento settimanale"),
         ("/forecast", "Forecast"),
         ("/kpi", "KPI economici"),
+        ("/cantieri", "Cantieri (EBITDA)"),
         ("/investimenti", "Capacità di investimento"),
         ("/analisi", "Analisi spese"),
         ("/contratti", "Contratti e piani incasso"),

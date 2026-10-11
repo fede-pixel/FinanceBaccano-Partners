@@ -138,6 +138,25 @@ class Recurrence(Base):
     account: Mapped[Account | None] = relationship()
 
 
+class Project(Base):
+    """Cantiere: le fatture emesse e ricevute assegnate al cantiere danno il suo margine (EBITDA per cantiere)."""
+
+    __tablename__ = "projects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    client: Mapped[str] = mapped_column(String(200), default="")  # come nelle fatture emesse
+    # parole che identificano il cantiere nelle descrizioni delle fatture (via, città, cognome del cliente...), separate da virgola
+    keywords: Mapped[str] = mapped_column(Text, default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+    @property
+    def keyword_list(self) -> list[str]:
+        return [k.strip().lower() for k in self.keywords.split(",") if len(k.strip()) >= 3]
+
+
 class Invoice(Base):
     """Fattura elettronica importata (XML FatturaPA da Aruba)."""
 
@@ -157,11 +176,17 @@ class Invoice(Base):
     # come conta nei costi dell'anno (solo fatture ricevute): "" normale; "cespite" bene da ammortizzare (fuori dall'EBITDA);
     # "escluso" acconto già compreso nella fattura di saldo (non va contato due volte); "verificato" acconto controllato, conta normale
     cost_treatment: Mapped[str] = mapped_column(String(20), default="")
+    # causale e descrizioni delle righe (dall'XML): servono a capire a quale cantiere appartiene la fattura
+    description: Mapped[str] = mapped_column(Text, default="")
+    # cantiere: project_source "" = da assegnare, "auto" (regole), "ai", "manuale", "generale" (spesa generale, nessun cantiere)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+    project_source: Mapped[str] = mapped_column(String(10), default="")
     file_name: Mapped[str] = mapped_column(String(255))
     file_hash: Mapped[str] = mapped_column(String(64), unique=True)
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     planned_items: Mapped[list["PlannedItem"]] = relationship(back_populates="invoice", cascade="all, delete-orphan")
+    project: Mapped[Project | None] = relationship()
 
     @property
     def taxable_cents(self) -> int | None:
