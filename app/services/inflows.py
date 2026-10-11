@@ -24,6 +24,12 @@ class MonthIn:
     recurring: int = 0
     other: int = 0
     cumulative: int = 0
+    out: int = 0  # uscite stimate: percentuale fissa degli incassi
+    net_cumulative: int = 0
+
+    @property
+    def net(self) -> int:
+        return self.total - self.out
 
     @property
     def total(self) -> int:
@@ -35,19 +41,33 @@ class Inflows:
     months: list[MonthIn] = field(default_factory=list)
     overdue: int = 0  # incassi già scaduti e non arrivati (fatture da sollecitare)
     overdue_count: int = 0
+    cost_ratio: float = 0.7
 
     @property
     def total(self) -> int:
         return sum(m.total for m in self.months)
 
+    @property
+    def total_out(self) -> int:
+        return sum(m.out for m in self.months)
+
+    @property
+    def net(self) -> int:
+        return self.total - self.total_out
+
     def chart(self) -> dict:
         return {"kind": "bar", "labelFormat": "month", "labels": [m.key for m in self.months], "stacked": True,
                 "title": "Incassi previsti mese per mese", "series": [
                     {"label": label, "values": [getattr(m, key) / 100 for m in self.months], "color": color, "stack": "in"}
-                    for key, label, color in SOURCES]}
+                    for key, label, color in SOURCES] + [
+                    {"label": self.out_label, "values": [m.out / 100 for m in self.months], "color": "--critical", "stack": "out"}]}
+
+    @property
+    def out_label(self) -> str:
+        return f"Uscite stimate ({self.cost_ratio * 100:.0f}% degli incassi)"
 
     def legend(self) -> list[tuple[str, str, str]]:
-        return [(label, color, "bar") for _, label, color in SOURCES]
+        return [(label, color, "bar") for _, label, color in SOURCES] + [(self.out_label, "--critical", "bar")]
 
 
 def _source(it: PlannedItem) -> str:
@@ -81,10 +101,15 @@ def monthly(session: Session, today: date | None = None, min_months: int = 6, ma
         m = by_key.get(f"{it.due_date.year}-{it.due_date.month:02d}")
         if m is not None:
             setattr(m, _source(it), getattr(m, _source(it)) + it.amount_cents)
-    run = 0
+    from app.services.investment import settings as inv_settings
+
+    out.cost_ratio = min(max(inv_settings(session)["inv_cost_ratio"], 0), 100) / 100
+    run = net = 0
     for m in out.months:
+        m.out = round(m.total * out.cost_ratio)
         run += m.total
-        m.cumulative = run
+        net += m.net
+        m.cumulative, m.net_cumulative = run, net
     return out
 
 

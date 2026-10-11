@@ -1,25 +1,30 @@
-{# Incassi previsti mese per mese: richiede la variabile "inflows" (app.services.inflows.Inflows) #}
+{# Incassi e uscite previsti mese per mese: richiede la variabile "inflows" (app.services.inflows.Inflows) #}
 {% from "_macros.html" import chart %}
+{% set pct = (inflows.cost_ratio * 100)|round|int %}
 <div class="card">
   <div class="page-head" style="margin-bottom:8px">
-    <h2 style="margin:0">Incassi previsti mese per mese</h2>
+    <h2 style="margin:0">Incassi e uscite previsti mese per mese</h2>
     <a href="/contratti">Contratti e piani incasso →</a>
   </div>
   <div class="kpis">
-    <div class="kpi"><div class="label">Totale previsto fino a {{ inflows.months[-1].key[5:] }}/{{ inflows.months[-1].key[:4] }}</div>
-      <div class="value">{{ inflows.total|eur }}</div><div class="sub">IVA compresa, come arriva in banca</div></div>
-    <div class="kpi"><div class="label">Questo mese</div><div class="value">{{ inflows.months[0].total|eur }}</div>
-      <div class="sub">dal {{ today|d }} a fine mese</div></div>
+    <div class="kpi"><div class="label">Incassi previsti fino a {{ inflows.months[-1].key[5:] }}/{{ inflows.months[-1].key[:4] }}</div>
+      <div class="value">{{ inflows.total|eur }}</div><div class="sub">IVA compresa, come arriva in banca · questo mese {{ inflows.months[0].total|eur }}</div></div>
+    <div class="kpi"><div class="label">Uscite stimate ({{ pct }}% degli incassi)</div><div class="value">{{ inflows.total_out|eur }}</div>
+      <div class="sub">percentuale modificabile in <a href="/investimenti#impostazioni">Capacità di investimento</a></div></div>
+    <div class="kpi"><div class="label">Flusso di cassa netto</div><div class="value {{ 'pos' if inflows.net > 0 else 'neg' }}">{{ inflows.net|eur_sign }}</div>
+      <div class="sub">incassi − uscite stimate nel periodo</div></div>
     <div class="kpi"><div class="label">Scaduti non incassati</div><div class="value {{ 'neg' if inflows.overdue }}">{{ inflows.overdue|eur }}</div>
       <div class="sub">{% if inflows.overdue %}{{ inflows.overdue_count }} voci da sollecitare, non incluse nei mesi · <a href="/fatture/situazione?vista=incassare">vedi</a>{% else %}nessuno{% endif %}</div></div>
   </div>
   {{ chart(chart_id or 'inflows-chart', inflows.chart(), inflows.legend()) }}
   <details style="margin-top:8px"><summary class="small">Tabella mese per mese</summary>
   <div class="table-wrap"><table class="small">
-    <thead><tr><th>Mese</th><th class="num">Fatture emesse</th><th class="num">Contratti</th><th class="num">Ricorrenze</th><th class="num">Altre</th><th class="num">Totale</th><th class="num">Cumulato</th></tr></thead>
+    <thead><tr><th>Mese</th><th class="num">Fatture emesse</th><th class="num">Contratti</th><th class="num">Ricorrenze</th><th class="num">Altre</th><th class="num">Incassi</th>
+      <th class="num">Uscite stimate ({{ pct }}%)</th><th class="num">Netto</th><th class="num">Netto cumulato</th></tr></thead>
     <tbody>{% for m in inflows.months %}<tr><td>{{ m.key[5:] }}/{{ m.key[:4] }}</td><td class="num">{{ m.invoices|eur }}</td><td class="num">{{ m.contracts|eur }}</td>
-      <td class="num">{{ m.recurring|eur }}</td><td class="num">{{ m.other|eur }}</td><td class="num"><strong>{{ m.total|eur }}</strong></td><td class="num">{{ m.cumulative|eur }}</td></tr>{% endfor %}</tbody>
+      <td class="num">{{ m.recurring|eur }}</td><td class="num">{{ m.other|eur }}</td><td class="num"><strong>{{ m.total|eur }}</strong></td>
+      <td class="num">{{ m.out|eur }}</td><td class="num">{{ m.net|eur_sign }}</td><td class="num">{{ m.net_cumulative|eur_sign }}</td></tr>{% endfor %}</tbody>
   </table></div>
-  <p class="small muted">Fatture emesse: alla scadenza di pagamento. Contratti: residuo diviso in parti uguali per mese fino alla data di fine. Ricorrenze: le entrate periodiche (es. Mercuri 1.000 € al mese). Le fatture in contenzioso non sono incluse.</p>
+  <p class="small muted">Incassi: fatture emesse alla scadenza di pagamento, rate dei contratti divise per mese fino alla data di fine, ricorrenze e voci manuali (escluse le fatture in contenzioso). Uscite: per prudenza il {{ pct }}% degli incassi dello stesso mese, che comprende fornitori, subappalti, personale e spese fisse.</p>
   </details>
 </div>

@@ -188,3 +188,22 @@ def test_fix_paid_before_plans(session):
     assert c.as_of == date(2026, 10, 10)
     p = contracts.plan(session, c)
     assert p.to_plan == 6_182_124 - 300_000  # solo la fattura emessa dopo il piano scala il residuo
+
+
+def test_forecast_outflows_and_fixed_costs(client):
+    from app.db import SessionLocal
+    from app.services import inflows, investment
+
+    with SessionLocal() as s:
+        c = _dmg(s)
+        contracts.sync_contract(s, c, today=date(2026, 10, 10))
+        s.commit()
+        r = inflows.monthly(s, date(2026, 10, 10))
+        assert r.cost_ratio == 0.7 and r.total_out == sum(round(m.total * 0.7) for m in r.months)
+        assert r.months[-1].net_cumulative == r.net
+        assert sum(v for _, v in investment.fixed_costs(s)) == 252_800
+    page = client.get("/forecast").text
+    assert "Spese fisse mensili" in page and "Uscite stimate" in page and "2.528,00" in page
+    client.post("/forecast/spese-fisse", data={"voci": "Affitto 500\nAds 1.500"})
+    with SessionLocal() as s:
+        assert investment.fixed_costs(s) == [("Affitto", 50_000), ("Ads", 150_000)]

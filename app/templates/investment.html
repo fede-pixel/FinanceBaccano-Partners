@@ -69,7 +69,7 @@
 </div>
 
 <div class="grid grid-2">
-  <div class="card">
+  <div class="card" id="impostazioni">
     <h2>Impostazioni</h2>
     <form method="post" action="/investimenti/impostazioni">
       <input type="hidden" name="mesi" value="{{ mesi }}"><input type="hidden" name="scenario" value="{{ scenario }}">
@@ -92,6 +92,7 @@
       <li><strong>Incassi previsti</strong>: tutte le entrate previste dal mese corrente all'ultima rata dei contratti, cioè fatture emesse da incassare, rate dei contratti, ricorrenze e voci manuali. Gli importi sono IVA compresa, come arrivano in banca. Le fatture in contenzioso sono escluse.</li>
       <li><strong>Scenari</strong>: base = incassi futuri al 100% e scaduti all'80%; prudente = futuri all'85% e scaduti al 50%; ottimista = tutto al 100%.</li>
       <li><strong>Costi</strong>: una percentuale fissa degli incassi ({{ (pp.cost_ratio * 100)|round|int }}%), modificabile qui sotto. {% if pp.actual_cost_ratio is not none %}Per confronto, quest'anno i costi fatturati più il personale valgono il <strong>{{ (pp.actual_cost_ratio * 100)|round|int }}%</strong> dei ricavi (imponibile, vedi KPI economici): se il margine reale resta quello, l'utile sarà più basso.{% endif %}</li>
+      {% if fixed_total %}<li><strong>Spese fisse</strong>: {{ fixed_total|eur }} al mese ({{ (fixed_total * pp.months|length)|eur }} nel periodo, vedi Forecast). Sono già dentro il {{ (pp.cost_ratio * 100)|round|int }}%: se i costi dei cantieri sono più bassi della stima, puoi investire di più.</li>{% endif %}
       <li><strong>Utile</strong> = incassi − costi − accantonamento per le imposte, diviso tra le aree con le percentuali scelte.</li>
       <li><strong>Quando spendere</strong>: subito solo la liquidità sopra la riserva di sicurezza, il resto man mano che arrivano gli incassi (tabella mese per mese).</li>
       <li>È una stima per decidere, non una garanzia: rivedila dopo ogni caricamento settimanale.</li>

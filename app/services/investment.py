@@ -345,3 +345,41 @@ def profit_plan(session: Session, scenario: str = "base", today: date | None = N
         plan.warnings.append("Nessun accantonamento per le imposte: su questo utile pagherai IRES e IRAP (spesso il 25-30%). "
                              "Imposta la quota nelle impostazioni per non investire soldi che serviranno per le tasse.")
     return plan
+
+
+# ---------- spese fisse mensili (riferimento: le uscite del forecast restano la percentuale prudente) ----------
+
+FIXED_COSTS_DEFAULT = [("Affitto", 47_000), ("Ads", 150_000), ("Commercialista", 20_800), ("Mengucci", 8_000),
+                       ("Assicurazione", 13_000), ("Varie", 14_000)]
+
+
+def fixed_costs(session: Session) -> list[tuple[str, int]]:
+    import json
+
+    raw = get_setting(session, "fixed_costs")
+    if not raw:
+        return list(FIXED_COSTS_DEFAULT)
+    try:
+        return [(str(n), int(v)) for n, v in json.loads(raw)]
+    except (ValueError, TypeError):
+        return list(FIXED_COSTS_DEFAULT)
+
+
+def parse_fixed_costs(text: str) -> list[tuple[str, int]]:
+    """Una voce per riga: "Affitto 470" oppure "Affitto; 470,00"."""
+    import re
+
+    from app.services.util import parse_amount
+
+    out = []
+    for line in text.splitlines():
+        m = re.match(r"\s*(.+?)[\s;:=\t]+(?:€\s*)?([-\d.,]+)\s*€?\s*$", line)
+        if m and (cents := parse_amount(m.group(2))) is not None:
+            out.append((m.group(1).strip(" ;:"), abs(cents)))
+    return out
+
+
+def save_fixed_costs(session: Session, items: list[tuple[str, int]]) -> None:
+    import json
+
+    set_setting(session, "fixed_costs", json.dumps(items))

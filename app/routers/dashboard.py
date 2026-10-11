@@ -1,17 +1,17 @@
 import json
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_session
 from app.models import Account, BankConnection, PlannedItem
 from app.services.admin_docs import ensure_checklist, open_deadlines, period_label
-from app.services import inflows
+from app.services import inflows, investment
 from app.services.forecast import Forecast, account_statuses, build_forecast
 from app.services.util import add_months, get_setting, month_bounds, month_label, parse_month
-from app.web import render
+from app.web import redirect, render
 
 router = APIRouter()
 
@@ -117,4 +117,15 @@ def forecast(
         next_mese=f"{next_m.year}-{next_m.month:02d}",
         inflows=inflows.monthly(session, today),
         outlook=inflows.revenue_outlook(session, today), sales_vat=inflows.SALES_VAT,
+        fixed=investment.fixed_costs(session),
     )
+
+
+@router.post("/forecast/spese-fisse")
+def save_fixed_costs(voci: str = Form(""), session: Session = Depends(get_session)):
+    items = investment.parse_fixed_costs(voci)
+    investment.save_fixed_costs(session, items)
+    session.commit()
+    total = sum(v for _, v in items)
+    return redirect("/forecast", msg=f"Spese fisse salvate: {len(items)} voci, {total / 100:,.2f} € al mese"
+                    .replace(",", "X").replace(".", ",").replace("X", "."))

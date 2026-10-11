@@ -92,6 +92,7 @@ def investment_page(request: Request, mesi: int = 6, scenario: str = "base", ses
         request, "investment.html", pp=pp, plan=plan, mesi=mesi, scenario=scenario, scenarios=investment.SCENARIOS,
         cfg=investment.settings(session), areas=investment.AREAS,
         chart_days=chart_days, chart_months=chart_months, chart_alloc=chart_alloc, chart_profit=chart_profit,
+        fixed_total=sum(v for _, v in investment.fixed_costs(session)),
     )
 
 

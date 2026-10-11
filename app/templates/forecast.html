@@ -78,6 +78,30 @@
 
 {% set chart_id = 'fc-inflows' %}{% include "_inflows.html" %}
 
+{% set fixed_total = fixed|sum(attribute=1) %}{% set n = inflows.months|length %}
+<div class="card">
+  <h2>Spese fisse mensili</h2>
+  <div class="grid grid-2">
+    <div>
+      <table class="small">
+        <tbody>{% for name, v in fixed %}<tr><td>{{ name }}</td><td class="num">{{ v|eur }}</td></tr>{% endfor %}
+          <tr><td><strong>Totale al mese</strong></td><td class="num"><strong>{{ fixed_total|eur }}</strong></td></tr>
+          <tr><td>Nei {{ n }} mesi del forecast</td><td class="num">{{ (fixed_total * n)|eur }}</td></tr></tbody>
+      </table>
+      <p class="small">Le uscite del forecast restano prudenti, al {{ (inflows.cost_ratio * 100)|round|int }}% degli incassi ({{ inflows.total_out|eur }}).
+        Di queste, le spese fisse valgono solo {{ (fixed_total * n)|eur }}. Il resto, <strong>{{ (inflows.total_out - fixed_total * n)|eur }}</strong>, copre fornitori, subappalti e personale dei lavori.
+        Se i costi dei cantieri restano sotto questa cifra, la differenza si aggiunge a quanto puoi investire.</p>
+    </div>
+    <form method="post" action="/forecast/spese-fisse">
+      <div class="field"><label>Voci (una per riga: nome e importo al mese)</label>
+        <textarea name="voci" rows="8">{% for name, v in fixed %}{{ name }} {{ v|cents_input }}
+{% endfor %}</textarea></div>
+      <button class="small">Salva spese fisse</button>
+      <p class="small muted">Per ora servono come riferimento: non si sommano alle uscite stimate, che le comprendono già.</p>
+    </form>
+  </div>
+</div>
+
 <div class="card">
   <h2>Giorno per giorno</h2>
   <div class="table-wrap">
