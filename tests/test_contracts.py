@@ -254,3 +254,18 @@ def test_forecast_until_contracts_end(client):
         s.commit()
     page = client.get("/forecast?giorni=-1").text
     assert "fine dei contratti" in page and "28/02/2027" in page
+
+
+def test_contract_installments_spread_over_month(session):
+    from app.services.forecast import build_forecast
+
+    c = _dmg(session)
+    contracts.sync_contract(session, c, today=date(2026, 10, 11))
+    session.commit()
+    today = date(2026, 11, 1)
+    fc = build_forecast(session, today, date(2026, 11, 30), today)
+    nov = [d for d in fc.days if d.projected is not None]
+    assert all(d.contract_in > 0 for d in nov)  # ogni giorno una quota, non tutto il 30
+    assert sum(d.contract_in for d in nov) == 1_236_425
+    assert nov[14].projected > nov[0].projected and nov[-1].projected > nov[14].projected  # cresce in modo graduale
+    assert fc.planned_in == 1_236_425 and fc.estimated_out == -round(1_236_425 * 0.7)

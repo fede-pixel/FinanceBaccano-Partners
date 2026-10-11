@@ -93,6 +93,7 @@ class ForecastDay:
     items: list[PlannedItem] = field(default_factory=list)
     below_threshold: bool = False
     estimated_out: int = 0  # uscite stimate (negative) in proporzione agli incassi, già comprese in outflow
+    contract_in: int = 0  # quota del giorno delle rate stimate dei contratti, già compresa in inflow
 
 
 @dataclass
@@ -114,29 +115,58 @@ class Forecast:
     cost_ratio: float = 0.0
 
 
+def contract_spread(items: list[PlannedItem], today: date) -> dict[date, int]:
+    """Le rate stimate dei contratti non hanno una data vera: si distribuiscono in parti uguali su tutti i giorni
+    del loro mese (da oggi, per il mese corrente) invece di cadere tutte a fine mese."""
+    out: dict[date, int] = {}
+    for p in items:
+        if not p.contract_id or p.due_date < today:
+            continue
+        first = max(today, p.due_date.replace(day=1))
+        days = (p.due_date - first).days + 1
+        base, rest = divmod(p.amount_cents, days)
+        for i in range(days):
+            d = first + timedelta(days=i)
+            out[d] = out.get(d, 0) + base + (1 if i < rest else 0)
+    return out
+
+
+def daily_inflows(items: list[PlannedItem], today: date) -> dict[date, int]:
+    """Incassi previsti per giorno: voci alla loro data, rate dei contratti distribuite nel mese."""
+    out = contract_spread(items, today)
+    for p in items:
+        if p.amount_cents > 0 and not p.contract_id and p.due_date >= today:
+            out[p.due_date] = out.get(p.due_date, 0) + p.amount_cents
+    return out
+
+
 def estimated_costs(items: list[PlannedItem], today: date, ratio: float) -> dict[date, int]:
     """Uscite stimate: ogni mese i costi sono almeno `ratio` degli incassi previsti (fornitori, subappalti, personale
     che non sono ancora fatture o ricorrenze). Si aggiunge solo la parte non già coperta dalle uscite previste note
-    dello stesso mese, nelle stesse date degli incassi (i costi si pagano con i soldi che entrano)."""
+    dello stesso mese, distribuita come gli incassi (i costi si pagano con i soldi che entrano)."""
     if ratio <= 0:
         return {}
-    months: dict[tuple[int, int], list[PlannedItem]] = {}
+    daily = daily_inflows(items, today)
+    months: dict[tuple[int, int], dict[date, int]] = {}
+    for d, v in daily.items():
+        months.setdefault((d.year, d.month), {})[d] = v
+    known: dict[tuple[int, int], int] = {}
     for p in items:
-        if p.due_date >= today:
-            months.setdefault((p.due_date.year, p.due_date.month), []).append(p)
+        if p.amount_cents < 0 and p.due_date >= today:
+            k = (p.due_date.year, p.due_date.month)
+            known[k] = known.get(k, 0) - p.amount_cents
     out: dict[date, int] = {}
-    for month_items in months.values():
-        ins = [p for p in month_items if p.amount_cents > 0]
-        total_in = sum(p.amount_cents for p in ins)
-        known_out = -sum(p.amount_cents for p in month_items if p.amount_cents < 0)
-        topup = max(0, round(total_in * ratio) - known_out)
-        if not topup:
+    for k, days in months.items():
+        total_in = sum(days.values())
+        topup = max(0, round(total_in * ratio) - known.get(k, 0))
+        if not topup or not total_in:
             continue
         left = topup
-        for i, p in enumerate(ins):
-            part = left if i == len(ins) - 1 else round(topup * p.amount_cents / total_in)
+        ordered = sorted(days.items())
+        for i, (d, v) in enumerate(ordered):
+            part = left if i == len(ordered) - 1 else round(topup * v / total_in)
             left -= part
-            out[p.due_date] = out.get(p.due_date, 0) - part
+            out[d] = out.get(d, 0) - part
     return out
 
 
@@ -177,12 +207,13 @@ def build_forecast(
     all_items = list(session.scalars(q.order_by(PlannedItem.due_date, PlannedItem.id)))
     ratio = cost_ratio(session)
     est = estimated_costs(all_items, today, ratio)
+    spread = contract_spread(all_items, today)
     open_items = [p for p in all_items if p.due_date <= end]
     overdue = [p for p in open_items if p.due_date < today]
     overdue_total = sum(p.amount_cents for p in overdue)
     by_day: dict[date, list[PlannedItem]] = {}
     for p in open_items:
-        if p.due_date >= today:
+        if p.due_date >= today and not p.contract_id:  # le rate dei contratti entrano distribuite (spread)
             by_day.setdefault(p.due_date, []).append(p)
 
     # Movimenti reali per i giorni passati (per mostrare entrate/uscite effettive)
@@ -200,7 +231,7 @@ def build_forecast(
     # Voci previste tra oggi e l'inizio del periodo (periodi futuri)
     d = today
     while d < start:
-        running += sum(p.amount_cents for p in by_day.get(d, [])) + est.get(d, 0)
+        running += sum(p.amount_cents for p in by_day.get(d, [])) + est.get(d, 0) + spread.get(d, 0)
         d += timedelta(days=1)
 
     days: list[ForecastDay] = []
@@ -216,7 +247,8 @@ def build_forecast(
         else:
             items = by_day.get(d, [])
             day.items = items
-            day.inflow = sum(p.amount_cents for p in items if p.amount_cents > 0)
+            day.contract_in = spread.get(d, 0)
+            day.inflow = sum(p.amount_cents for p in items if p.amount_cents > 0) + day.contract_in
             day.estimated_out = est.get(d, 0)
             day.outflow = sum(p.amount_cents for p in items if p.amount_cents < 0) + day.estimated_out
             estimated_total += day.estimated_out

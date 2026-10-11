@@ -119,6 +119,7 @@
           {% for p in d.items %}
             <div><a href="/previsti/{{ p.id }}">{{ p.title }}</a> <span class="small muted">{{ p.amount_cents|eur_sign }}{% if p.account %} · {{ p.account.name }}{% endif %}</span></div>
           {% endfor %}
+          {% if d.contract_in %}<div class="muted">Rate dei contratti, quota del giorno <span class="small">{{ d.contract_in|eur_sign }}</span></div>{% endif %}
           {% if d.estimated_out %}<div class="muted">Costi stimati sugli incassi ({{ (fc.cost_ratio * 100)|round|int }}%) <span class="small">{{ d.estimated_out|eur_sign }}</span></div>{% endif %}
           {% if d.date < fc.today and (d.inflow or d.outflow) %}<span class="small muted">movimenti reali</span>{% endif %}
         </td>
