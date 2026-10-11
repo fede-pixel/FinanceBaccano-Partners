@@ -230,3 +230,27 @@ def test_forecast_estimates_costs_from_inflows(session):
     r = investment.remainder(session, today)
     assert r.end_balance == 450_000 and r.estimated_out == -850_000 and r.known_out == -200_000
     assert r.invest_end == max(0, r.end_balance - r.reserve)
+
+
+def test_dashboard_chart_until_contracts_end(client):
+    import json
+    import re
+
+    from app.db import SessionLocal
+    with SessionLocal() as s:
+        c = _dmg(s)
+        contracts.sync_contract(s, c)
+        s.commit()
+    page = client.get("/").text
+    assert "fine dei contratti" in page
+    data = json.loads(re.search(r'id="dash-chart"[^>]*>(.*?)</script>', page, re.S).group(1)) if 'id="dash-chart"' in page else None
+    assert data["labels"][-1] == "2027-02-28"
+
+
+def test_forecast_until_contracts_end(client):
+    from app.db import SessionLocal
+    with SessionLocal() as s:
+        contracts.sync_contract(s, _dmg(s))
+        s.commit()
+    page = client.get("/forecast?giorni=-1").text
+    assert "fine dei contratti" in page and "28/02/2027" in page

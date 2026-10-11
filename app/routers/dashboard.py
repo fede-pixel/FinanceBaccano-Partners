@@ -35,6 +35,14 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
     today = date.today()
     start, end = month_bounds(today.year, today.month)
     fc = build_forecast(session, start, end, today)
+    # il grafico arriva fino alla fine dei contratti attivi (ultima rata prevista), almeno a fine mese
+    from sqlalchemy import func
+
+    from app.models import Contract
+
+    last = session.scalar(select(func.max(Contract.end_date)).where(Contract.active))
+    chart_end = max(end, last) if last else end
+    fc_chart = fc if chart_end == end else build_forecast(session, start, chart_end, today)
     next30 = build_forecast(session, today, today + timedelta(days=30), today)
     statuses = account_statuses(session, today)
     upcoming = list(
@@ -63,7 +71,9 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         upcoming=upcoming,
         deadlines=deadlines,
         period_label=period_label,
-        chart=chart_payload(fc),
+        chart=chart_payload(fc_chart),
+        chart_title=(month_label(today.year, today.month) if chart_end == end else
+                     f"{month_label(today.year, today.month).lower()} → {month_label(chart_end.year, chart_end.month).lower()} (fine dei contratti)"),
         month_title=month_label(today.year, today.month),
         has_accounts=has_accounts,
         bank_alerts=bank_alerts,
@@ -91,7 +101,16 @@ def forecast(
     session: Session = Depends(get_session),
 ):
     today = date.today()
-    if giorni:
+    if giorni == -1:  # fino alla fine dei contratti attivi
+        from sqlalchemy import func
+
+        from app.models import Contract
+
+        last = session.scalar(select(func.max(Contract.end_date)).where(Contract.active)) or today + timedelta(days=90)
+        start, end = today.replace(day=1), max(last, today)
+        title = f"fino al {end:%d/%m/%Y} (fine dei contratti)"
+        cur = today.replace(day=1)
+    elif giorni:
         start, end = today, today + timedelta(days=giorni)
         title = f"Prossimi {giorni} giorni"
         cur = today.replace(day=1)

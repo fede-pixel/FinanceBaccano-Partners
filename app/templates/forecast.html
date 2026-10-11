@@ -17,6 +17,7 @@
   {% endif %}
   <select name="giorni" onchange="this.form.submit()">
     <option value="0" {{ 'selected' if not giorni }}>Vista mensile</option>
+    <option value="-1" {{ 'selected' if giorni == -1 }}>Fino alla fine dei contratti</option>
     {% for g in (30, 60, 90, 180) %}<option value="{{ g }}" {{ 'selected' if giorni == g }}>Prossimi {{ g }} giorni</option>{% endfor %}
   </select>
   <select name="conto" onchange="this.form.submit()">
