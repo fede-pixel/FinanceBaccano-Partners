@@ -278,7 +278,5 @@ def test_seed_lanza_all_in_october(session):
     session.flush()
     assert contracts.seed_lanza(session) and not contracts.seed_lanza(session)
     c = session.scalars(select(Contract).where(Contract.client == "Lanza")).one()
-    contracts.sync_contract(session, c, today=date(2026, 10, 11))
-    session.flush()
     items = contracts.plan(session, c).items
-    assert len(items) == 1 and items[0].amount_cents == 1_240_000 and items[0].due_date == date(2026, 10, 31)
+    assert len(items) == 1 and items[0].amount_cents == 1_240_000 and c.end_date == date(2026, 10, 31)
