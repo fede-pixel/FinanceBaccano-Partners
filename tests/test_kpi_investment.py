@@ -52,9 +52,9 @@ def test_investment_capacity(session):
     acc = _setup(session)
     base = investment.build(session, 6, "base", TODAY)
     assert base.hist_in == 3_000_000 and base.avg_monthly_out == 2_000_000 and base.recurring_surplus == 1_000_000
-    assert base.reserve == 4_000_000  # 2 mesi di uscite medie
-    # cassa oggi 80.000 €: subito si possono spendere 40.000 € (fino alla riserva); in modo graduale di più, perché la cassa cresce
-    assert base.investable_now == base.balance_today - base.reserve == 4_000_000
+    assert base.reserve == 2 * 252_800  # 2 mesi di spese fisse
+    # cassa oggi 80.000 €: subito si può spendere fino alla riserva; in modo graduale di più, perché la cassa cresce
+    assert base.investable_now == base.balance_today - base.reserve
     assert base.investable > base.investable_now
     pru = investment.build(session, 6, "prudente", TODAY)
     assert pru.investable < base.investable
@@ -177,3 +177,16 @@ def test_profit_plan_from_expected_inflows(session):
     session.commit()
     pp2 = investment.profit_plan(session, "base", date(2026, 10, 10))
     assert pp2.taxes == round(pp2.profit * 0.25) and pp2.investable == pp2.profit - pp2.taxes
+
+
+def test_monthly_investment_capacity():
+    from types import SimpleNamespace as D
+
+    days = [D(date=date(2026, 10, 30), projected=50_000, inflow=0, outflow=0),
+            D(date=date(2026, 11, 15), projected=30_000, inflow=0, outflow=-20_000),
+            D(date=date(2026, 12, 31), projected=90_000, inflow=60_000, outflow=0)]
+    months = investment.monthly_capacity(days, 10_000, [0.5, 0.5])
+    # ottobre: il saldo scenderà a 30.000 a novembre, quindi entro ottobre solo 20.000; a dicembre si arriva a 80.000
+    assert [(m.key, m.cumulative, m.new) for m in months] == [("2026-10", 20_000, 20_000), ("2026-11", 20_000, 0),
+                                                               ("2026-12", 80_000, 60_000)]
+    assert months[2].by_area == [30_000, 30_000] and months[2].inflow == 60_000 and months[1].outflow == 20_000

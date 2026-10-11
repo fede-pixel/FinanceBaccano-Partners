@@ -65,6 +65,13 @@ def investment_page(request: Request, mesi: int = 6, scenario: str = "base", ses
     mesi = mesi if mesi in (3, 6, 12) else 6
     scenario = scenario if scenario in investment.SCENARIOS else "base"
     pp = investment.profit_plan(session, scenario)
+    rem = investment.remainder(session)
+    colors = ["--series-actual", "--series-forecast", "--series-3", "--series-4"]
+    chart_rem = {
+        "kind": "bar", "labelFormat": "month", "labels": [m.key for m in rem.months], "stacked": True,
+        "title": "Capacità di investimento mese per mese", "series": [
+            {"label": label, "values": [m.by_area[i] / 100 for m in rem.months], "color": colors[i % 4], "stack": "inv"}
+            for i, (_, label) in enumerate(investment.AREAS)]}
     plan = pp.cash
     chart_profit = {
         "kind": "bar", "labelFormat": "month", "labels": [m.key for m in pp.months], "stacked": True,
@@ -93,7 +100,7 @@ def investment_page(request: Request, mesi: int = 6, scenario: str = "base", ses
         cfg=investment.settings(session), areas=investment.AREAS,
         chart_days=chart_days, chart_months=chart_months, chart_alloc=chart_alloc, chart_profit=chart_profit,
         fixed_total=sum(v for _, v in investment.fixed_costs(session)),
-        rem=investment.remainder(session),
+        rem=rem, chart_rem=chart_rem, legend_rem=[(s["label"], s["color"], "bar") for s in chart_rem["series"]],
         cfg_reserve_months=f"{investment.settings(session)['inv_reserve_months']:g}".replace(".", ","),
     )
 

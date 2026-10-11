@@ -187,7 +187,7 @@ def build(session: Session, horizon_months: int = 6, scenario: str = "base", tod
         d += timedelta(days=1)
 
     threshold = int(get_setting(session, "low_balance_threshold") or 0)
-    reserve = max(threshold, int(avg_out * cfg["inv_reserve_months"]))
+    reserve = max(threshold, int(sum(v for _, v in fixed_costs(session)) * cfg["inv_reserve_months"]))
     investable_now = max(0, min_balance - reserve)
     # spesa distribuita in modo uniforme sull'orizzonte: il budget massimo B tale che, al giorno i,
     # saldo_i − B·i/N resti sopra la riserva per ogni giorno
@@ -404,6 +404,41 @@ class Remainder:
     invest_end: int  # disponibile a fine periodo, man mano che arrivano gli incassi
     cost_ratio: float
     allocations: list[Allocation] = field(default_factory=list)
+    months: list["InvestMonth"] = field(default_factory=list)
+
+
+@dataclass
+class InvestMonth:
+    key: str  # YYYY-MM
+    inflow: int
+    outflow: int  # uscite note + stimate (positive)
+    end_balance: int
+    cumulative: int  # investibile entro fine mese senza mai scendere sotto la riserva, nemmeno dopo
+    new: int  # quanto si aggiunge in questo mese
+    by_area: list[int] = field(default_factory=list)
+
+    @property
+    def net(self) -> int:
+        return self.inflow - self.outflow
+
+
+def monthly_capacity(days, reserve: int, shares: list[float]) -> list[InvestMonth]:
+    """Mese per mese: quanto si può aver investito in tutto entro la fine di ogni mese. Spendere abbassa anche tutti
+    i saldi successivi, quindi il limite è il saldo più basso da quel mese in poi, meno la riserva."""
+    proj = [d for d in days if d.projected is not None]
+    out: list[InvestMonth] = []
+    prev = 0
+    keys = list(dict.fromkeys(f"{d.date.year}-{d.date.month:02d}" for d in proj))
+    for k in keys:
+        month = [d for d in proj if f"{d.date.year}-{d.date.month:02d}" == k]
+        first = proj.index(month[0])
+        lowest = min(d.projected for d in proj[first:])
+        cum = max(prev, max(0, lowest - reserve))
+        new = cum - prev
+        out.append(InvestMonth(k, sum(d.inflow for d in month), -sum(d.outflow for d in month), month[-1].projected,
+                               cum, new, [int(new * s) for s in shares]))
+        prev = cum
+    return out
 
 
 def remainder(session: Session, today: date | None = None) -> Remainder:
@@ -420,10 +455,11 @@ def remainder(session: Session, today: date | None = None) -> Remainder:
     end = date(y, m, calendar.monthrange(y, m)[1])
     fc = build_forecast(session, today, end, today)
     cfg = settings(session)
-    n = max(1, len(fl.months))
-    monthly_out = -fc.planned_out // n
+    # riserva = N mesi di spese fisse (affitto, ads, commercialista...): i costi dei cantieri, stimati in % degli
+    # incassi, si pagano con gli incassi stessi e sono già nel saldo previsto giorno per giorno
     threshold = int(get_setting(session, "low_balance_threshold") or 0)
-    reserve = max(threshold, int(monthly_out * cfg["inv_reserve_months"]))
+    fixed = sum(v for _, v in fixed_costs(session))
+    reserve = max(threshold, int(fixed * cfg["inv_reserve_months"]))
     end_balance = fc.end_balance or 0
     min_balance = fc.min_balance if fc.min_balance is not None else end_balance
     r = Remainder(
@@ -434,6 +470,9 @@ def remainder(session: Session, today: date | None = None) -> Remainder:
         invest_now=max(0, min_balance - reserve), invest_end=max(0, end_balance - reserve), cost_ratio=fc.cost_ratio,
     )
     total_share = sum(cfg[f"inv_{k}"] for k, _ in AREAS) or 100
-    r.allocations = [Allocation(k, label, cfg[f"inv_{k}"] / total_share, int(r.invest_end * cfg[f"inv_{k}"] / total_share))
-                     for k, label in AREAS]
+    shares = [cfg[f"inv_{k}"] / total_share for k, _ in AREAS]
+    r.months = monthly_capacity(fc.days, reserve, shares)
+    if r.months:  # stessa regola del mese per mese: si spende durante il mese, non solo l'ultimo giorno
+        r.invest_end = r.months[-1].cumulative
+    r.allocations = [Allocation(k, label, s, int(r.invest_end * s)) for (k, label), s in zip(AREAS, shares)]
     return r

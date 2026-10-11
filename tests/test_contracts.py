@@ -229,7 +229,7 @@ def test_forecast_estimates_costs_from_inflows(session):
     assert oct_fc.estimated_out == -500_000
     r = investment.remainder(session, today)
     assert r.end_balance == 450_000 and r.estimated_out == -850_000 and r.known_out == -200_000
-    assert r.invest_end == max(0, r.end_balance - r.reserve)
+    assert r.invest_end == r.months[-1].cumulative <= max(0, r.end_balance - r.reserve)
 
 
 def test_dashboard_chart_until_contracts_end(client):

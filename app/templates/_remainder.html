@@ -24,7 +24,7 @@
       </div>
       <table class="small"><thead><tr><th>Area</th><th class="num">Entro il {{ rem.end|d }}</th></tr></thead>
         <tbody>{% for a in rem.allocations %}<tr><td>{{ a.label }} ({{ (a.share * 100)|round|int }}%)</td><td class="num">{{ a.amount|eur }}</td></tr>{% endfor %}</tbody></table>
-      <p class="small muted">Spendi subito al massimo l'investibile subito; il resto man mano che arrivano gli incassi. Riserva = {{ cfg_reserve_months }} mesi di uscite medie previste.</p>
+      <p class="small muted">Spendi subito al massimo l'investibile subito; il resto man mano che arrivano gli incassi. Riserva = {{ cfg_reserve_months }} mesi di spese fisse (o la soglia minima delle Impostazioni, se più alta): i costi dei cantieri sono già nelle uscite stimate.</p>
     </div>
   </div>
 </div>

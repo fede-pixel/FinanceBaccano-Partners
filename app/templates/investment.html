@@ -15,6 +15,23 @@
 {% for w in pp.warnings %}<div class="alert warn small">{{ w }}</div>{% endfor %}
 
 {% include "_remainder.html" %}
+
+<div class="card">
+  <h2>Capacità di investimento mese per mese</h2>
+  <div class="kpis">
+    {% for m in rem.months %}<div class="kpi"><div class="label">{{ m.key[5:] }}/{{ m.key[:4] }}</div><div class="value">{{ m.new|eur }}</div>
+      <div class="sub">totale entro il mese {{ m.cumulative|eur }}</div></div>{% endfor %}
+  </div>
+  {% if rem.invest_end %}{{ chart('c-rem', chart_rem, legend_rem) }}{% endif %}
+  <div class="table-wrap"><table class="small">
+    <thead><tr><th>Mese</th><th class="num">Incassi</th><th class="num">Uscite (note + stimate)</th><th class="num">Saldo a fine mese</th>
+      <th class="num">Investibile nel mese</th><th class="num">Totale investibile</th>{% for k, label in areas %}<th class="num">{{ label.split(' ')[0] }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for m in rem.months %}<tr><td>{{ m.key[5:] }}/{{ m.key[:4] }}</td><td class="num">{{ m.inflow|eur }}</td><td class="num">{{ m.outflow|eur }}</td>
+      <td class="num">{{ m.end_balance|eur }}</td><td class="num"><strong>{{ m.new|eur }}</strong></td><td class="num">{{ m.cumulative|eur }}</td>
+      {% for v in m.by_area %}<td class="num">{{ v|eur }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="small muted">"Investibile nel mese" è quanto puoi spendere in più in quel mese senza che la liquidità scenda mai sotto la riserva di sicurezza ({{ rem.reserve|eur }}), né in quel mese né in quelli dopo: una spesa abbassa anche tutti i saldi successivi. Se un mese è a zero, aspetta: la cassa serve a coprire le uscite previste più avanti. Gli importi per area seguono le percentuali delle impostazioni.</p>
+</div>
 <h2 style="margin-top:8px">Utile atteso sugli incassi</h2>
 
 <div class="kpis">
@@ -65,7 +82,7 @@
     <div class="kpi"><div class="label">Punto più basso previsto</div><div class="value {{ 'neg' if plan.min_balance < plan.reserve }}">{{ plan.min_balance|eur }}</div>
       <div class="sub">il {{ plan.min_date|d }}</div></div>
     <div class="kpi"><div class="label">Riserva di sicurezza</div><div class="value">{{ plan.reserve|eur }}</div>
-      <div class="sub">{{ cfg.inv_reserve_months|round(1)|string|replace('.0', '')|replace('.', ',') }} mesi di uscite medie ({{ plan.avg_monthly_out|eur }}/mese)</div></div>
+      <div class="sub">{{ cfg.inv_reserve_months|round(1)|string|replace('.0', '')|replace('.', ',') }} mesi di spese fisse, o la soglia minima se più alta</div></div>
   </div>
   {{ chart('c-days', chart_days, [('Liquidità prevista', '--series-actual', 'line'), ('Riserva di sicurezza', '--critical', 'dash')]) }}
   <p class="small muted">Saldo giorno per giorno con entrate e uscite previste (pesate secondo lo scenario) e, nei mesi ancora vuoti, le medie storiche. L'utile si investe man mano che arriva: se la linea scende sotto la riserva, aspetta gli incassi prima di spendere.</p>
@@ -82,7 +99,7 @@
         {% for k, label in areas %}
         <div class="field"><label>{{ label }} (%)</label><input name="inv_{{ k }}" inputmode="decimal" value="{{ cfg['inv_' ~ k]|round(1)|string|replace('.0', '') }}"></div>
         {% endfor %}
-        <div class="field"><label>Riserva di sicurezza (mesi di uscite)</label><input name="inv_reserve_months" inputmode="decimal" value="{{ cfg.inv_reserve_months|round(1)|string|replace('.0', '') }}"></div>
+        <div class="field"><label>Riserva di sicurezza (mesi di spese fisse)</label><input name="inv_reserve_months" inputmode="decimal" value="{{ cfg.inv_reserve_months|round(1)|string|replace('.0', '') }}"></div>
         <div class="field"><label>Costo aziendale medio per assunzione (€/mese)</label><input name="inv_hire_cost" inputmode="decimal" value="{{ cfg.inv_hire_cost|int }}"></div>
       </div>
       <p class="small muted">Le percentuali delle aree vengono riproporzionate se non sommano a 100.</p>
