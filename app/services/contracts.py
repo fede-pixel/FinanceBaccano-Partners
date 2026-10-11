@@ -200,4 +200,5 @@ def seed_lanza(session: Session) -> bool:
     session.add(c)
     session.flush()
     sync_contract(session, c)
+    session.flush()
     return True
