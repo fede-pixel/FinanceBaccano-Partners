@@ -48,39 +48,14 @@ class Plan:
     outside: list[Invoice] = field(default_factory=list)  # fatture al cliente segnate fuori contratto
     kept: int = 0  # rate già segnate incassate a mano
     to_plan: int = 0
-    # contratti "cifra da incassare" (IVA compresa): fatture del cliente ancora aperte e incassi arrivati dopo l'aggiornamento
-    open_invoices: list[tuple[Invoice, int]] = field(default_factory=list)
-    collected_after: int = 0
     items: list[PlannedItem] = field(default_factory=list)
 
 
-def _cash_plan(session: Session, c: Contract, items: list[PlannedItem], kept: int) -> Plan:
-    """Cifra da incassare: comprende anche le fatture già emesse e non ancora incassate. Si toglie quello che è
-    ancora aperto sulle fatture del cliente (il loro incasso è previsto dalla fattura) e quello incassato dopo
-    la data di aggiornamento."""
-    from app.services.invoice_match import invoice_statuses
-
-    excluded = c.excluded_ids
-    mine = [s for s in invoice_statuses(session, "attiva")
-            if s.invoice.doc_type not in SELF_INVOICE_TYPES and name_matches(c.client, s.invoice.counterparty)]
-    open_inv = [(s.invoice, s.open_cents) for s in mine if s.state == "aperta" and s.open_cents and s.invoice.id not in excluded]
-    collected = sum(s.paid_cents for s in mine if s.paid_date and s.paid_date > c.as_of and s.paid_cents
-                    and s.invoice.id not in excluded)
-    open_total = sum(v for _, v in open_inv)
-    outside = [s.invoice for s in mine if s.invoice.id in excluded]
-    p = Plan(c, c.residual_gross_cents, open_total + collected, [i for i, _ in open_inv], outside, kept,
-             open_invoices=open_inv, collected_after=collected, items=items)
-    p.to_plan = max(0, p.residual - open_total - collected - kept)
-    return p
-
-
 def plan(session: Session, c: Contract) -> Plan:
-    items = list(session.scalars(select(PlannedItem).where(PlannedItem.contract_id == c.id).order_by(PlannedItem.due_date)))
-    kept = sum(it.amount_cents for it in items if it.status != "previsto")
-    if c.vat_included:
-        return _cash_plan(session, c, items, kept)
     invs = invoices_after(session, c)
     invoiced = sum(-abs(i.total_cents) if i.doc_type in CREDIT_NOTE_TYPES else abs(i.total_cents) for i in invs)
+    items = list(session.scalars(select(PlannedItem).where(PlannedItem.contract_id == c.id).order_by(PlannedItem.due_date)))
+    kept = sum(it.amount_cents for it in items if it.status != "previsto")
     p = Plan(c, c.residual_gross_cents, invoiced, invs, invoices_after(session, c, excluded=True), kept)
     p.to_plan = max(0, p.residual - invoiced - kept)
     p.items = items

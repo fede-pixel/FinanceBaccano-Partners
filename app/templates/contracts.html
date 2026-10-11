@@ -32,14 +32,7 @@
     <tr><td>Importo contratto ({{ kind }})</td><td class="num">{{ c.total_taxable_cents|eur }}</td></tr>
     {% if c.paid_taxable_cents %}<tr><td>− Già versato al {{ c.as_of|d }} ({{ kind }})</td><td class="num">{{ (-c.paid_taxable_cents)|eur_sign }}</td></tr>{% endif %}
     <tr><td><strong>= Residuo {{ 'IVA compresa' if c.vat_included else 'con IVA ' ~ c.vat_rate ~ '%' }}</strong> al {{ c.as_of|d }}</td><td class="num"><strong>{{ p.residual|eur }}</strong></td></tr>
-    {% if c.vat_included %}
-    {% if p.open_invoices %}<tr><td>− Fatture già emesse e non ancora incassate (il loro incasso è previsto in Fatture da saldare):
-      {% for i, v in p.open_invoices %}<div>n. {{ i.number }} del {{ i.date|d }} (da incassare {{ v|eur }})
-        <form method="post" action="/contratti/{{ c.id }}/fattura" style="display:inline"><input type="hidden" name="invoice_id" value="{{ i.id }}">
-        <button class="small ghost" title="Extra o fornitura a parte: non scala il residuo del contratto">non fa parte del contratto</button></form></div>{% endfor %}</td>
-      <td class="num">{{ (-(p.invoiced_after - p.collected_after))|eur_sign }}</td></tr>{% endif %}
-    {% if p.collected_after %}<tr><td>− Incassato dal cliente dopo il {{ c.as_of|d }}</td><td class="num">{{ (-p.collected_after)|eur_sign }}</td></tr>{% endif %}
-    {% elif p.invoices %}<tr><td>− Fatture emesse dopo il {{ c.as_of|d }} (il loro incasso è previsto in Fatture da saldare):
+    {% if p.invoices %}<tr><td>− Fatture emesse dopo il {{ c.as_of|d }} (il loro incasso è previsto in Fatture da saldare):
       {% for i in p.invoices %}<div>n. {{ i.number }} del {{ i.date|d }} ({{ i.total_cents|eur }})
         <form method="post" action="/contratti/{{ c.id }}/fattura" style="display:inline"><input type="hidden" name="invoice_id" value="{{ i.id }}">
         <button class="small ghost" title="Extra o fornitura a parte: non scala il residuo del contratto">non fa parte del contratto</button></form></div>{% endfor %}</td>
@@ -72,7 +65,7 @@
       <div class="field"><label>Importo contratto (€)</label><input name="total" required value="{{ c0.total_taxable_cents|cents_input if c0 }}"></div>
       <div class="field"><label>Già versato (€)</label><input name="paid" value="{{ c0.paid_taxable_cents|cents_input if c0 else '0' }}"></div>
       <div class="field"><label>IVA %</label><input type="number" min="0" max="30" name="vat_rate" value="{{ c0.vat_rate if c0 else 10 }}"></div>
-      <div class="field"><label class="check"><input type="checkbox" name="vat_included" value="1" {{ 'checked' if c0 and c0.vat_included }}> Cifra ancora da incassare, IVA compresa (comprende le fatture già emesse e non incassate)</label></div>
+      <div class="field"><label class="check"><input type="checkbox" name="vat_included" value="1" {{ 'checked' if c0 and c0.vat_included }}> Importi già IVA compresa (cifra da incassare)</label></div>
       <div class="field"><label>Piano aggiornato al</label><input type="date" name="as_of" required value="{{ (c0.as_of if c0 else today).isoformat() }}"></div>
       <div class="field"><label>Incassato tutto entro</label><input type="date" name="end_date" required value="{{ c0.end_date.isoformat() if c0 }}"></div>
       <div class="field"><label>Conto di incasso</label><select name="account_id"><option value="0">— qualsiasi —</option>
