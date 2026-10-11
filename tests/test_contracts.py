@@ -269,3 +269,16 @@ def test_contract_installments_spread_over_month(session):
     assert sum(d.contract_in for d in nov) == 1_236_425
     assert nov[14].projected > nov[0].projected and nov[-1].projected > nov[14].projected  # cresce in modo graduale
     assert fc.planned_in == 1_236_425 and fc.estimated_out == -round(1_236_425 * 0.7)
+
+
+def test_seed_lanza_all_in_october(session):
+    session.add(Invoice(direction="attiva", doc_type="TD01", number="FPR 48/26", date=date(2026, 8, 18),
+                        counterparty="DMG ANALYTICS & CONSULTING S.R.L.S.", total_cents=719_950, vat_cents=65_450,
+                        file_name="z", file_hash="z"))
+    session.flush()
+    assert contracts.seed_lanza(session) and not contracts.seed_lanza(session)
+    c = session.scalars(select(Contract).where(Contract.client == "Lanza")).one()
+    contracts.sync_contract(session, c, today=date(2026, 10, 11))
+    session.flush()
+    items = contracts.plan(session, c).items
+    assert len(items) == 1 and items[0].amount_cents == 1_240_000 and items[0].due_date == date(2026, 10, 31)

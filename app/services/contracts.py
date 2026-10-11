@@ -182,3 +182,22 @@ def fix_paid_before_plans(session: Session) -> int:
     for c in rows:
         sync_contract(session, c)
     return n
+
+
+def seed_lanza(session: Session) -> bool:
+    """Incasso Lanza comunicato l'11/10/2026: 12.400 € da incassare tutti entro ottobre. Una sola volta."""
+    from app.services.util import get_setting, set_setting
+
+    if get_setting(session, "seed_contract_lanza_2026_10"):
+        return False
+    if not any(name_matches("DMG Analytics & Consulting", i.counterparty)
+               for i in session.scalars(select(Invoice).where(Invoice.direction == "attiva"))):
+        return False
+    set_setting(session, "seed_contract_lanza_2026_10", "1")
+    c = Contract(client="Lanza", total_taxable_cents=1_240_000, vat_included=True, as_of=date(2026, 10, 11),
+                 end_date=date(2026, 10, 31),
+                 notes="Comunicato l'11/10/2026: 12.400 € da incassare, tutti a ottobre.")
+    session.add(c)
+    session.flush()
+    sync_contract(session, c)
+    return True
