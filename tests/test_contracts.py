@@ -312,3 +312,28 @@ def test_overdue_paid_in_three_tranches(session):
     assert [p for _, p in parts] == [-515_709, -515_708, -515_708]
     assert [d for d, _ in parts] == [date(2026, 10, 18), date(2026, 10, 24), date(2026, 10, 31)]
     assert fc.end_balance == fc.balance_today - 1_547_125
+
+
+def test_year_end_forecast_on_kpi(client):
+    from app.db import SessionLocal
+    from app.services import kpi
+
+    with SessionLocal() as s:
+        s.add(Invoice(direction="attiva", doc_type="TD01", number="E1", date=date(2026, 3, 1), counterparty="Cliente",
+                      total_cents=1_100_000, vat_cents=100_000, file_name="e", file_hash="e"))
+        s.add(Invoice(direction="passiva", doc_type="TD01", number="F1", date=date(2026, 3, 2), counterparty="Fornitore",
+                      total_cents=610_000, vat_cents=110_000, file_name="f", file_hash="f"))
+        c = Contract(client="Salerno", total_taxable_cents=3_300_000, vat_included=True, vat_rate=10,
+                     as_of=date(2026, 10, 10), end_date=date(2026, 12, 31))
+        s.add(c)
+        s.flush()
+        contracts.sync_contract(s, c, today=date(2026, 10, 11))
+        s.commit()
+        rep = kpi.build(s, 12, date(2026, 10, 11))
+        ye = kpi.year_end_forecast(s, rep, date(2026, 10, 11))
+    assert ye.ebitda_done == rep.ytd_ebitda == 500_000
+    assert abs(ye.revenue_to_come - 3_000_000) <= 3  # 33.000 IVA compresa = 30.000 imponibile
+    assert ye.costs_to_come == round(ye.revenue_to_come * 0.7)
+    assert ye.ebitda == 500_000 + ye.revenue_to_come - ye.costs_to_come
+    page = client.get("/kpi").text
+    assert "EBITDA previsto al 31/12" in page

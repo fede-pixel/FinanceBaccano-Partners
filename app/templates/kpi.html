@@ -18,6 +18,14 @@
 {% endif %}
 
 <div class="kpis">
+  <div class="kpi"><div class="label">Ricavi previsti al {{ ye.end|d }}</div><div class="value">{{ ye.revenue|eur }}</div>
+    <div class="sub">{{ ye.revenue_done|eur }} fatturati + {{ ye.revenue_to_come|eur }} da contratti e altre entrate previste (imponibile)</div></div>
+  <div class="kpi"><div class="label">EBITDA previsto al {{ ye.end|d }}</div><div class="value {{ 'neg' if ye.ebitda < 0 }}">{{ ye.ebitda|eur }}</div>
+    <div class="sub">margine {{ pctv(ye.margin) }} · costi sui nuovi ricavi al {{ (ye.cost_ratio * 100)|round|int }}%
+      {% if ye.disputed %}<br>prudente <strong>{{ ye.ebitda_prudent|eur }}</strong>, senza i crediti in contenzioso{% endif %}</div></div>
+</div>
+
+<div class="kpis">
   <div class="kpi"><div class="label">Ricavi dell'anno</div><div class="value">{{ rep.ytd_revenue|eur }}</div>
     <div class="sub">{% if rep.ytd_revenue_without_vat %}<span class="neg">di cui {{ rep.ytd_revenue_without_vat|eur }} IVA compresa ({{ rep.ytd_revenue_invoices_without_vat }} fatture senza IVA indicata)</span>{% elif rep.revenue_growth is not none %}ultimi 3 mesi {{ '+' if rep.revenue_growth >= 0 }}{{ pctv(rep.revenue_growth) }} sui 3 precedenti{% else %}imponibile fatture emesse{% endif %}</div></div>
   <div class="kpi"><div class="label">EBITDA dell'anno (stimato)</div><div class="value {{ 'neg' if rep.ytd_ebitda < 0 }}">{{ rep.ytd_ebitda|eur }}</div>
@@ -60,6 +68,11 @@
       <tr><td>− Crediti in contenzioso o stralciati su fatture dell'anno (imponibile): ricavi che probabilmente non incasserai</td><td class="num">{{ (-r.disputed_taxable)|eur_sign }}</td><td></td></tr>
       <tr><td><strong>= EBITDA prudente</strong></td><td class="num"><strong>{{ r.ebitda_prudent|eur_sign }}</strong></td><td></td></tr>
       {% endif %}
+      <tr><td colspan="3" style="padding-top:14px"><strong>Previsione al {{ ye.end|d }}</strong></td></tr>
+      <tr><td>+ Ricavi ancora da fatturare entro il {{ ye.end|d }} (rate dei contratti, ricorrenze, altre entrate previste; IVA scorporata)</td><td class="num">{{ ye.revenue_to_come|eur_sign }}</td><td></td></tr>
+      <tr><td>− Costi stimati su questi ricavi ({{ (ye.cost_ratio * 100)|round|int }}%, come in Capacità di investimento)</td><td class="num">{{ (-ye.costs_to_come)|eur_sign }}</td><td></td></tr>
+      <tr><td><strong>= EBITDA previsto al {{ ye.end|d }}</strong> (ricavi {{ ye.revenue|eur }}, margine {{ pctv(ye.margin) }})</td><td class="num"><strong>{{ ye.ebitda|eur_sign }}</strong></td><td></td></tr>
+      {% if ye.disputed %}<tr><td><strong>= EBITDA previsto prudente</strong> (senza i crediti in contenzioso)</td><td class="num"><strong>{{ ye.ebitda_prudent|eur_sign }}</strong></td><td></td></tr>{% endif %}
     </tbody>
   </table>
   <p class="small muted" style="margin-top:6px"><strong>Perché due colonne.</strong> La fattura e la lista di Aruba mostrano il totale IVA compresa; il grafico "Fatturato" di Aruba usa l'imponibile e non conta le autofatture. Nella colonna IVA compresa le autofatture sono contate come nella lista di Aruba, sia tra le emesse sia tra le ricevute, quindi nella differenza si annullano. L'utile si misura sull'imponibile, perché l'IVA incassata va versata allo Stato e quella pagata si recupera.</p>

@@ -57,7 +57,8 @@ def kpi_page(request: Request, mesi: int = 12, iva: str = "", provvisorio: str =
         {"label": "IVA a credito (acquisti)", "values": [p.credit / 100 for p in vat.periods], "color": "--series-forecast"}]}
     charts["vat_balance"] = {"kind": "bar", "labels": [p.label for p in vat.periods], "title": "Posizione IVA", "series": [
         {"label": "Saldo del periodo (+ debito / − credito)", "values": [p.balance / 100 for p in vat.periods], "color": "--series-actual"}]}
-    return render(request, "kpi.html", rep=rep, charts=charts, mesi=mesi, vat=vat, today=date.today(), prov=prov)
+    ye = kpi.year_end_forecast(session, rep)
+    return render(request, "kpi.html", rep=rep, charts=charts, mesi=mesi, vat=vat, today=date.today(), prov=prov, ye=ye)
 
 
 @router.get("/investimenti")

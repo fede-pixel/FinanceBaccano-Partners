@@ -399,3 +399,55 @@ def provisional_view(session: Session, cutoff: date) -> Provisional:
         Transaction.date >= start, Transaction.date <= cutoff, Transaction.category == PERSONNEL, Transaction.amount_cents < 0)))
     late.sort(key=lambda x: -x[4])
     return Provisional(cutoff, revenue, costs_known, costs_all, late, personnel)
+
+
+# ---------- previsione al 31 dicembre ----------
+
+@dataclass
+class YearEndForecast:
+    end: date
+    revenue_done: int  # ricavi già fatturati (imponibile)
+    revenue_to_come: int  # rate dei contratti e altre entrate previste da fatturare entro il 31/12 (imponibile)
+    costs_done: int  # costi fornitori + autofatture già fatturati
+    personnel_done: int
+    cost_ratio: float
+    costs_to_come: int  # stima: cost_ratio dei ricavi ancora da fatturare
+    disputed: int  # crediti in contenzioso/stralciati (imponibile)
+
+    @property
+    def revenue(self) -> int:
+        return self.revenue_done + self.revenue_to_come
+
+    @property
+    def ebitda_done(self) -> int:
+        return self.revenue_done - self.costs_done - self.personnel_done
+
+    @property
+    def ebitda(self) -> int:
+        return self.ebitda_done + self.revenue_to_come - self.costs_to_come
+
+    @property
+    def ebitda_prudent(self) -> int:
+        return self.ebitda - self.disputed
+
+    @property
+    def margin(self) -> float | None:
+        return self.ebitda / self.revenue if self.revenue > 0 else None
+
+
+def year_end_forecast(session: Session, rep: KPIReport, today: date | None = None) -> YearEndForecast:
+    """EBITDA dell'anno a oggi + ricavi ancora da fatturare entro il 31/12 (contratti, ricorrenze, altre entrate,
+    IVA scorporata) − costi stimati sugli stessi ricavi con la percentuale della capacità di investimento."""
+    from app.services import inflows
+    from app.services.investment import settings as inv_settings
+
+    today = today or date.today()
+    out = inflows.revenue_outlook(session, today)
+    ratio = min(max(inv_settings(session)["inv_cost_ratio"], 0), 100) / 100
+    r = rep.recon
+    to_come = out.year_end.to_come
+    return YearEndForecast(
+        end=out.year_end.end, revenue_done=rep.ytd_revenue, revenue_to_come=to_come,
+        costs_done=r.get("costs", 0) - r.get("capex", 0) - r.get("excluded_costs", 0), personnel_done=r.get("personnel", 0),
+        cost_ratio=ratio, costs_to_come=round(to_come * ratio), disputed=r.get("disputed_taxable", 0),
+    )

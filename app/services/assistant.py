@@ -400,6 +400,11 @@ def tool_kpi(session: Session, mesi: int) -> dict:
                           "nota_ebitda": "L'EBITDA comprende i ricavi delle fatture in contenzioso (sono emesse); "
                                          "ebitda_prudente li toglie al netto dell'IVA e degli acconti già incassati. "
                                          "Usa questi valori, non ricalcolarli."},
+        "previsione_31_dicembre": (lambda ye: {
+            "ricavi_previsti": _eur(ye.revenue), "di_cui_da_fatturare": _eur(ye.revenue_to_come),
+            "costi_stimati_sui_nuovi_ricavi": _eur(ye.costs_to_come), "percentuale_costi": f"{ye.cost_ratio * 100:.0f}%",
+            "ebitda_previsto": _eur(ye.ebitda), "ebitda_previsto_prudente": _eur(ye.ebitda_prudent),
+            "margine_previsto": pc(ye.margin)})(kpi.year_end_forecast(session, rep)),
         "crescita_ricavi_3m": pc(rep.revenue_growth), "liquidita_oggi": _eur(rep.balance_today),
         "autonomia_mesi": rep.runway_months and round(rep.runway_months, 1),
         "crediti_aperti": _eur(rep.receivables), "crediti_scaduti": _eur(rep.receivables_overdue),
