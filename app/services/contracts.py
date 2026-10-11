@@ -89,6 +89,17 @@ def sync_all(session: Session, today: date | None = None) -> None:
     session.flush()
 
 
+DMG_TITLE = "Del Moro – Via Gramsci 85, Monterotondo, interni 2 e 3"
+
+
+def label_dmg(session: Session) -> None:
+    """Il contratto DMG è quello di Del Moro: il nome compare nel titolo, così si ritrova anche nelle rate previste."""
+    for c in session.scalars(select(Contract).where(Contract.client.like("DMG%"))):
+        if "del moro" not in c.title.lower():
+            c.title = DMG_TITLE
+            sync_contract(session, c)
+
+
 def seed_dmg(session: Session) -> bool:
     """Piano pagamenti DMG Analytics & Consulting (Del Moro) aggiornato al 05/10/2026, caricato una sola volta
     e solo se in app ci sono già fatture di questo cliente."""
@@ -101,7 +112,7 @@ def seed_dmg(session: Session) -> bool:
         return False
     set_setting(session, "seed_contract_dmg_2026", "1")
     c = Contract(
-        client="DMG Analytics & Consulting S.r.l.s.", title="Via Gramsci 85, Monterotondo – interni 2 e 3",
+        client="DMG Analytics & Consulting S.r.l.s.", title=DMG_TITLE,
         total_taxable_cents=9_649_000, paid_taxable_cents=4_028_887, vat_rate=10,
         as_of=date(2026, 10, 5), end_date=date(2027, 2, 28),
         notes="Contratto del 18/08/2026 (preventivo 8563) + integrazione 2.990 €: interno 2 56.000 €, interno 3 40.490 €. "

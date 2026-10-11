@@ -155,3 +155,11 @@ def test_revenue_outlook(session):
 def test_forecast_page_shows_revenue_outlook(client):
     page = client.get("/forecast").text
     assert "Previsione di fatturato" in page and "Ultimo incasso previsto" in page
+
+
+def test_dmg_is_labelled_del_moro(session):
+    c = _dmg(session)
+    contracts.label_dmg(session)
+    session.flush()
+    assert "Del Moro" in c.title
+    assert all("Del Moro" in i.title for i in contracts.plan(session, c).items)
