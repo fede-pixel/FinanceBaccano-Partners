@@ -207,3 +207,26 @@ def test_forecast_outflows_and_fixed_costs(client):
     client.post("/forecast/spese-fisse", data={"voci": "Affitto 500\nAds 1.500"})
     with SessionLocal() as s:
         assert investment.fixed_costs(s) == [("Affitto", 50_000), ("Ads", 150_000)]
+
+
+def test_forecast_estimates_costs_from_inflows(session):
+    from app.services import investment
+    from app.services.forecast import build_forecast, estimated_costs
+
+    today = date(2026, 10, 11)
+    items = [PlannedItem(title="Incasso", amount_cents=1_000_000, due_date=date(2026, 10, 31)),
+             PlannedItem(title="Fornitore", amount_cents=-200_000, due_date=date(2026, 10, 20)),
+             PlannedItem(title="Incasso nov", amount_cents=500_000, due_date=date(2026, 11, 30))]
+    est = estimated_costs(items, today, 0.7)
+    assert est == {date(2026, 10, 31): -500_000, date(2026, 11, 30): -350_000}  # 70% meno le uscite note del mese
+    session.add_all(items)
+    session.commit()
+    fc = build_forecast(session, today, date(2026, 11, 30), today)
+    assert fc.estimated_out == -850_000 and fc.planned_in == 1_500_000 and fc.planned_out == -1_050_000
+    assert fc.end_balance == 1_500_000 - 1_050_000
+    # la vista di ottobre conta i costi di tutto il mese, anche quelli stimati sugli incassi di fine mese
+    oct_fc = build_forecast(session, today, date(2026, 10, 31), today)
+    assert oct_fc.estimated_out == -500_000
+    r = investment.remainder(session, today)
+    assert r.end_balance == 450_000 and r.estimated_out == -850_000 and r.known_out == -200_000
+    assert r.invest_end == max(0, r.end_balance - r.reserve)

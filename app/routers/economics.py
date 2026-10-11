@@ -93,6 +93,8 @@ def investment_page(request: Request, mesi: int = 6, scenario: str = "base", ses
         cfg=investment.settings(session), areas=investment.AREAS,
         chart_days=chart_days, chart_months=chart_months, chart_alloc=chart_alloc, chart_profit=chart_profit,
         fixed_total=sum(v for _, v in investment.fixed_costs(session)),
+        rem=investment.remainder(session),
+        cfg_reserve_months=f"{investment.settings(session)['inv_reserve_months']:g}".replace(".", ","),
     )
 
 

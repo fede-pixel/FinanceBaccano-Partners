@@ -1,0 +1,30 @@
+{# Investimento sulla rimanenza di cassa: richiede "rem" (app.services.investment.Remainder) #}
+<div class="card">
+  <div class="page-head" style="margin-bottom:8px">
+    <h2 style="margin:0">Rimanenza di cassa e investimento al {{ rem.end|d }}</h2>
+    <a href="/investimenti">Capacità di investimento →</a>
+  </div>
+  <div class="grid grid-2">
+    <table class="small">
+      <tbody>
+        <tr><td>Saldo oggi</td><td class="num">{{ rem.balance_today|eur }}</td></tr>
+        {% if rem.overdue %}<tr><td>+ Voci scadute non abbinate (contate oggi)</td><td class="num">{{ rem.overdue|eur_sign }}</td></tr>{% endif %}
+        <tr><td>+ Incassi previsti</td><td class="num pos">{{ rem.planned_in|eur_sign }}</td></tr>
+        <tr><td>− Uscite note (fatture da pagare, ricorrenze, voci previste)</td><td class="num">{{ rem.known_out|eur_sign }}</td></tr>
+        <tr><td>− Uscite stimate (costi fino al {{ (rem.cost_ratio * 100)|round|int }}% degli incassi di ogni mese)</td><td class="num">{{ rem.estimated_out|eur_sign }}</td></tr>
+        <tr><td><strong>= Saldo previsto al {{ rem.end|d }}</strong></td><td class="num"><strong>{{ rem.end_balance|eur }}</strong></td></tr>
+        <tr><td>− Riserva di sicurezza</td><td class="num">{{ (-rem.reserve)|eur_sign }}</td></tr>
+        <tr><td><strong>= Investibile entro il {{ rem.end|d }}</strong></td><td class="num pos"><strong>{{ rem.invest_end|eur }}</strong></td></tr>
+      </tbody>
+    </table>
+    <div>
+      <div class="kpis" style="margin-bottom:8px">
+        <div class="kpi"><div class="label">Investibile subito</div><div class="value">{{ rem.invest_now|eur }}</div>
+          <div class="sub">punto più basso {{ rem.min_balance|eur }} il {{ rem.min_date|d }}, meno la riserva</div></div>
+      </div>
+      <table class="small"><thead><tr><th>Area</th><th class="num">Entro il {{ rem.end|d }}</th></tr></thead>
+        <tbody>{% for a in rem.allocations %}<tr><td>{{ a.label }} ({{ (a.share * 100)|round|int }}%)</td><td class="num">{{ a.amount|eur }}</td></tr>{% endfor %}</tbody></table>
+      <p class="small muted">Spendi subito al massimo l'investibile subito; il resto man mano che arrivano gli incassi. Riserva = {{ cfg_reserve_months }} mesi di uscite medie previste.</p>
+    </div>
+  </div>
+</div>

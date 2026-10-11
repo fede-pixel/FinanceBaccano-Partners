@@ -14,6 +14,9 @@
 
 {% for w in pp.warnings %}<div class="alert warn small">{{ w }}</div>{% endfor %}
 
+{% include "_remainder.html" %}
+<h2 style="margin-top:8px">Utile atteso sugli incassi</h2>
+
 <div class="kpis">
   <div class="kpi"><div class="label">Incassi previsti fino a {{ pp.last_month[5:] }}/{{ pp.last_month[:4] }}</div><div class="value">{{ pp.inflow|eur }}</div>
     <div class="sub">fatture emesse, contratti, ricorrenze{% if pp.overdue %} e {{ pp.overdue|eur }} di scaduti attesi{% endif %}</div></div>

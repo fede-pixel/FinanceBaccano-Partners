@@ -92,6 +92,7 @@ class ForecastDay:
     outflow: int = 0
     items: list[PlannedItem] = field(default_factory=list)
     below_threshold: bool = False
+    estimated_out: int = 0  # uscite stimate (negative) in proporzione agli incassi, già comprese in outflow
 
 
 @dataclass
@@ -109,6 +110,43 @@ class Forecast:
     planned_in: int
     planned_out: int
     accounts: list[Account]
+    estimated_out: int = 0  # uscite stimate nel periodo (negative), già comprese in planned_out
+    cost_ratio: float = 0.0
+
+
+def estimated_costs(items: list[PlannedItem], today: date, ratio: float) -> dict[date, int]:
+    """Uscite stimate: ogni mese i costi sono almeno `ratio` degli incassi previsti (fornitori, subappalti, personale
+    che non sono ancora fatture o ricorrenze). Si aggiunge solo la parte non già coperta dalle uscite previste note
+    dello stesso mese, nelle stesse date degli incassi (i costi si pagano con i soldi che entrano)."""
+    if ratio <= 0:
+        return {}
+    months: dict[tuple[int, int], list[PlannedItem]] = {}
+    for p in items:
+        if p.due_date >= today:
+            months.setdefault((p.due_date.year, p.due_date.month), []).append(p)
+    out: dict[date, int] = {}
+    for month_items in months.values():
+        ins = [p for p in month_items if p.amount_cents > 0]
+        total_in = sum(p.amount_cents for p in ins)
+        known_out = -sum(p.amount_cents for p in month_items if p.amount_cents < 0)
+        topup = max(0, round(total_in * ratio) - known_out)
+        if not topup:
+            continue
+        left = topup
+        for i, p in enumerate(ins):
+            part = left if i == len(ins) - 1 else round(topup * p.amount_cents / total_in)
+            left -= part
+            out[p.due_date] = out.get(p.due_date, 0) - part
+    return out
+
+
+def cost_ratio(session: Session) -> float:
+    """Percentuale di costi sugli incassi usata dal forecast (0 = disattivata), la stessa della capacità di investimento."""
+    if get_setting(session, "forecast_estimate_costs") == "0":
+        return 0.0
+    from app.services.investment import settings as inv_settings
+
+    return min(max(inv_settings(session)["inv_cost_ratio"], 0), 100) / 100
 
 
 def build_forecast(
@@ -128,13 +166,18 @@ def build_forecast(
     def actual_total(d: date) -> int:
         return sum(c.at(d) for c in calcs.values())
 
-    q = select(PlannedItem).where(PlannedItem.status == "previsto", PlannedItem.due_date <= end)
+    # per le uscite stimate servono i mesi interi: leggo le voci fino a fine mese della data finale
+    month_end = (end.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    q = select(PlannedItem).where(PlannedItem.status == "previsto", PlannedItem.due_date <= month_end)
     if account_ids:
         q = q.where(PlannedItem.account_id.in_(ids))
     else:
         # voci senza conto contano sul totale; escludo quelle legate a conti fuori forecast
         q = q.where((PlannedItem.account_id.is_(None)) | (PlannedItem.account_id.in_(ids)))
-    open_items = list(session.scalars(q.order_by(PlannedItem.due_date, PlannedItem.id)))
+    all_items = list(session.scalars(q.order_by(PlannedItem.due_date, PlannedItem.id)))
+    ratio = cost_ratio(session)
+    est = estimated_costs(all_items, today, ratio)
+    open_items = [p for p in all_items if p.due_date <= end]
     overdue = [p for p in open_items if p.due_date < today]
     overdue_total = sum(p.amount_cents for p in overdue)
     by_day: dict[date, list[PlannedItem]] = {}
@@ -157,11 +200,11 @@ def build_forecast(
     # Voci previste tra oggi e l'inizio del periodo (periodi futuri)
     d = today
     while d < start:
-        running += sum(p.amount_cents for p in by_day.get(d, []))
+        running += sum(p.amount_cents for p in by_day.get(d, [])) + est.get(d, 0)
         d += timedelta(days=1)
 
     days: list[ForecastDay] = []
-    planned_in = planned_out = 0
+    planned_in = planned_out = estimated_total = 0
     d = start
     while d <= end:
         day = ForecastDay(date=d)
@@ -174,7 +217,9 @@ def build_forecast(
             items = by_day.get(d, [])
             day.items = items
             day.inflow = sum(p.amount_cents for p in items if p.amount_cents > 0)
-            day.outflow = sum(p.amount_cents for p in items if p.amount_cents < 0)
+            day.estimated_out = est.get(d, 0)
+            day.outflow = sum(p.amount_cents for p in items if p.amount_cents < 0) + day.estimated_out
+            estimated_total += day.estimated_out
             planned_in += day.inflow
             planned_out += day.outflow
             running += day.inflow + day.outflow
@@ -201,4 +246,6 @@ def build_forecast(
         planned_in=planned_in,
         planned_out=planned_out,
         accounts=accounts,
+        estimated_out=estimated_total,
+        cost_ratio=ratio,
     )

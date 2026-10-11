@@ -383,3 +383,57 @@ def save_fixed_costs(session: Session, items: list[tuple[str, int]]) -> None:
     import json
 
     set_setting(session, "fixed_costs", json.dumps(items))
+
+
+# ---------- investimento sulla rimanenza di cassa (forecast con uscite stimate) ----------
+
+@dataclass
+class Remainder:
+    today: date
+    end: date
+    balance_today: int
+    planned_in: int
+    known_out: int  # uscite previste note (fatture da pagare, ricorrenze, voci manuali), negative
+    estimated_out: int  # uscite stimate in % degli incassi, negative
+    overdue: int  # voci scadute conteggiate oggi (se l'impostazione lo prevede)
+    end_balance: int
+    min_balance: int
+    min_date: date
+    reserve: int
+    invest_now: int  # spendibile subito senza scendere mai sotto la riserva
+    invest_end: int  # disponibile a fine periodo, man mano che arrivano gli incassi
+    cost_ratio: float
+    allocations: list[Allocation] = field(default_factory=list)
+
+
+def remainder(session: Session, today: date | None = None) -> Remainder:
+    """Saldo di oggi + incassi previsti − uscite note − uscite stimate fino all'ultimo mese con incassi previsti:
+    quello che resta sopra la riserva di sicurezza si può investire."""
+    import calendar
+
+    from app.services import inflows
+    from app.services.forecast import build_forecast
+
+    today = today or date.today()
+    fl = inflows.monthly(session, today)
+    y, m = int(fl.months[-1].key[:4]), int(fl.months[-1].key[5:])
+    end = date(y, m, calendar.monthrange(y, m)[1])
+    fc = build_forecast(session, today, end, today)
+    cfg = settings(session)
+    n = max(1, len(fl.months))
+    monthly_out = -fc.planned_out // n
+    threshold = int(get_setting(session, "low_balance_threshold") or 0)
+    reserve = max(threshold, int(monthly_out * cfg["inv_reserve_months"]))
+    end_balance = fc.end_balance or 0
+    min_balance = fc.min_balance if fc.min_balance is not None else end_balance
+    r = Remainder(
+        today=today, end=end, balance_today=fc.balance_today, planned_in=fc.planned_in,
+        known_out=fc.planned_out - fc.estimated_out, estimated_out=fc.estimated_out,
+        overdue=fc.overdue_total if fc.overdue_included else 0,
+        end_balance=end_balance, min_balance=min_balance, min_date=fc.min_date or today, reserve=reserve,
+        invest_now=max(0, min_balance - reserve), invest_end=max(0, end_balance - reserve), cost_ratio=fc.cost_ratio,
+    )
+    total_share = sum(cfg[f"inv_{k}"] for k, _ in AREAS) or 100
+    r.allocations = [Allocation(k, label, cfg[f"inv_{k}"] / total_share, int(r.invest_end * cfg[f"inv_{k}"] / total_share))
+                     for k, label in AREAS]
+    return r

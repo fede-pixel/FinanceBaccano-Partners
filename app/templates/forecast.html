@@ -32,7 +32,8 @@
     <div class="value {{ 'crit' if fc.min_balance is not none and fc.min_balance < fc.threshold }}">{{ fc.min_balance|eur if fc.min_balance is not none else '—' }}</div>
     <div class="sub">{% if fc.min_date %}il {{ fc.min_date|d }}{% endif %}</div></div>
   <div class="kpi"><div class="label">Entrate / uscite previste</div>
-    <div class="value" style="font-size:18px"><span class="pos">{{ fc.planned_in|eur_sign }}</span> / {{ fc.planned_out|eur }}</div></div>
+    <div class="value" style="font-size:18px"><span class="pos">{{ fc.planned_in|eur_sign }}</span> / {{ fc.planned_out|eur }}</div>
+    {% if fc.estimated_out %}<div class="sub">uscite: {{ (fc.planned_out - fc.estimated_out)|eur }} note + {{ fc.estimated_out|eur }} stimate ({{ (fc.cost_ratio * 100)|round|int }}% degli incassi)</div>{% endif %}</div>
 </div>
 
 {% if fc.overdue %}
@@ -51,6 +52,8 @@
 {% endif %}
 
 <div class="card">{{ forecast_chart(chart, "fc-chart") }}</div>
+
+{% include "_remainder.html" %}
 
 {% set y = outlook.year_end %}
 <div class="card">
@@ -115,6 +118,7 @@
           {% for p in d.items %}
             <div><a href="/previsti/{{ p.id }}">{{ p.title }}</a> <span class="small muted">{{ p.amount_cents|eur_sign }}{% if p.account %} · {{ p.account.name }}{% endif %}</span></div>
           {% endfor %}
+          {% if d.estimated_out %}<div class="muted">Costi stimati sugli incassi ({{ (fc.cost_ratio * 100)|round|int }}%) <span class="small">{{ d.estimated_out|eur_sign }}</span></div>{% endif %}
           {% if d.date < fc.today and (d.inflow or d.outflow) %}<span class="small muted">movimenti reali</span>{% endif %}
         </td>
         <td class="num pos">{{ d.inflow|eur if d.inflow else '' }}</td>
