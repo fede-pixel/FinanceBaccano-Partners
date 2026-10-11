@@ -42,6 +42,7 @@ def bootstrap(db_path=None) -> None:
         contracts.seed_lanza(session)
         contracts.label_dmg(session)
         contracts.fix_paid_before_plans(session)
+        contracts.fix_paid_lanza(session)
         contracts.sync_all(session)  # le rate partono dal mese corrente: si spostano col passare dei mesi
         session.commit()
         from app.services.util import get_setting, set_setting

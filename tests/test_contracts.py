@@ -280,3 +280,21 @@ def test_seed_lanza_all_in_october(session):
     c = session.scalars(select(Contract).where(Contract.client == "Lanza")).one()
     items = contracts.plan(session, c).items
     assert len(items) == 1 and items[0].amount_cents == 1_240_000 and c.end_date == date(2026, 10, 31)
+
+
+def test_fix_paid_lanza(session):
+    from app.services import invoice_match
+
+    assert contracts.fix_paid_lanza(session) == 0  # senza la voce Lanza non fa nulla
+    session.add(Contract(client="Lanza", total_taxable_cents=1_240_000, vat_included=True, as_of=date(2026, 10, 11),
+                         end_date=date(2026, 10, 31)))
+    for n, d, cents in (("FPR 61/26", date(2026, 9, 17), 1_198_230), ("FPR 99/26", date(2026, 10, 20), 100_000)):
+        inv = Invoice(direction="attiva", doc_type="TD01", number=n, date=d, counterparty="Manuel Lanza",
+                      total_cents=cents, vat_cents=cents // 11, file_name=n, file_hash=n)
+        inv.planned_items.append(PlannedItem(title=n, amount_cents=cents, due_date=d, source="fattura"))
+        session.add(inv)
+    session.flush()
+    assert contracts.fix_paid_lanza(session) == 1 and contracts.fix_paid_lanza(session) == 0
+    session.flush()
+    st = {s.invoice.number: s.state for s in invoice_match.invoice_statuses(session, "attiva")}
+    assert st == {"FPR 61/26": "presunta", "FPR 99/26": "aperta"}

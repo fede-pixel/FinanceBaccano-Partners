@@ -202,3 +202,23 @@ def seed_lanza(session: Session) -> bool:
     sync_contract(session, c)
     session.flush()
     return True
+
+
+def fix_paid_lanza(session: Session) -> int:
+    """Correzione dell'11/10/2026, una sola volta: le fatture emesse a Lanza fino all'11/10 sono tutte incassate
+    (i 12.400 € di ottobre sono un incasso in più). Quelle ancora aperte in app sono segnate incassate senza
+    movimento, in un lotto annullabile; se arriva il movimento in banca, l'abbinamento lo collega."""
+    from app.services import invoice_match
+    from app.services.util import get_setting, set_setting
+
+    if get_setting(session, "fix_lanza_2026_10_11"):
+        return 0
+    if not session.scalar(select(Contract.id).where(Contract.client == "Lanza")):
+        return 0
+    set_setting(session, "fix_lanza_2026_10_11", "1")
+    paid = [s for s in invoice_match.invoice_statuses(session, "attiva")
+            if s.state == "aperta" and s.invoice.date <= date(2026, 10, 11) and name_matches("Lanza", s.invoice.counterparty)]
+    batch, n = invoice_match.mark_presumed(session, paid)
+    if n:
+        set_setting(session, "fix_lanza_2026_10_11_batch", batch)
+    return n
