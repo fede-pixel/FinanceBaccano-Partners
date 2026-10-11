@@ -155,3 +155,31 @@ def test_revenue_outlook(session):
 def test_forecast_page_shows_revenue_outlook(client):
     page = client.get("/forecast").text
     assert "Previsione di fatturato" in page and "Ultimo incasso previsto" in page
+
+
+def test_cash_contract_includes_open_invoices(session):
+    from app.models import Account, Transaction
+
+    c = Contract(client="Luongo", total_taxable_cents=14_000_000, vat_included=True, as_of=date(2026, 10, 10),
+                 end_date=date(2027, 2, 28))
+    session.add(c)
+    for n, cents in (("FPR 51/26", 525_889), ("FPR 63/26", 525_889), ("FPR 66/26", 946_601)):
+        inv = Invoice(direction="attiva", doc_type="TD01", number=n, date=date(2026, 9, 2), counterparty="Luciano Luongo",
+                      total_cents=cents, vat_cents=cents // 11, file_name=n, file_hash=n)
+        inv.planned_items.append(PlannedItem(title=n, amount_cents=cents, due_date=date(2026, 10, 2), source="fattura"))
+        session.add(inv)
+    session.flush()
+    p = contracts.plan(session, c)
+    assert p.to_plan == 14_000_000 - 1_998_379 and len(p.open_invoices) == 3  # niente doppio conteggio
+    # la 51/26 viene incassata dopo l'aggiornamento: il totale resta lo stesso
+    acc = Account(name="Banca")
+    session.add(acc)
+    session.flush()
+    item = session.scalars(select(PlannedItem).where(PlannedItem.title == "FPR 51/26")).one()
+    tx = Transaction(account_id=acc.id, date=date(2026, 10, 20), amount_cents=525_889, description="Bonifico Luongo", dedupe_key="t")
+    tx.planned_item = item
+    item.status, item.paid_date, item.settlement = "pagato", date(2026, 10, 20), "movimento"
+    session.add(tx)
+    session.flush()
+    p = contracts.plan(session, c)
+    assert p.collected_after == 525_889 and p.to_plan == 14_000_000 - 1_998_379
